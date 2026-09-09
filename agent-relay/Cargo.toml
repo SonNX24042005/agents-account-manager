@@ -1,0 +1,37 @@
+[package]
+name = "agent-relay"
+version = "1.0.3"
+edition = "2021"
+description = "High-performance local AI relay server & account manager for AI coding agents"
+authors = ["Samer <samer@local>"]
+
+[dependencies]
+tokio = { version = "1.38", features = ["full"] }
+axum = { version = "0.7", features = ["macros"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+uuid = { version = "1.10", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "5.0"
+rusqlite = { version = "0.31", features = ["bundled"] }
+rand = "0.8"
+urlencoding = "2.1"
+hyper = "1.0"
+hyper-util = { version = "0.1", features = ["full"] }
+anyhow = "1.0"
+futures-util = "0.3"
+base64 = "0.22"
+sha2 = "0.10"
+subtle = "2.6"
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "2.3", features = ["linux-secret-service"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "2.3", features = ["windows-sys"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "2.3", features = ["security-framework"] }
