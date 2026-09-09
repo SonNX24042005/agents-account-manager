@@ -1,5 +1,12 @@
 # Agent Account Manager
 
+<p align="left">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-1.80%2B-orange.svg" alt="Rust 1.80+"></a>
+  <a href="#cài-đặt-và-sử-dụng"><img src="https://img.shields.io/badge/nền_tảng-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg" alt="Nền tảng: Linux | macOS | Windows"></a>
+  <a href="https://github.com/SonNX24042005/agents-account-manager"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
+</p>
+
 [English](README.md) | [Tiếng Việt](README_VI.md)
 
 Hệ thống quản trị đa tài khoản và điều phối hạn ngạch thông minh dành cho các AI coding agent, bao gồm **Antigravity CLI (`agy`)**, **Antigravity IDE**, **Claude Code**, **Cursor** và các agent trong hệ sinh thái AI coding.

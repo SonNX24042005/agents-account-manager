@@ -1,5 +1,12 @@
 # Agent account manager
 
+<p align="left">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-1.80%2B-orange.svg" alt="Rust 1.80+"></a>
+  <a href="#installation-and-usage"><img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg" alt="Platform: Linux | macOS | Windows"></a>
+  <a href="https://github.com/SonNX24042005/agents-account-manager"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
+</p>
+
 [English](README.md) | [Tiếng Việt](README_VI.md)
 
 An intelligent multi-account manager and quota coordinator designed for AI coding agents, including **Antigravity CLI (`agy`)**, **Antigravity IDE**, **Claude Code**, **Cursor**, and the broader AI coding ecosystem.
