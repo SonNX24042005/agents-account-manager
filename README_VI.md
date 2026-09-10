@@ -34,13 +34,13 @@ Cài đặt và khởi chạy dịch vụ ngay lập tức với một câu lệ
   ```bash
   curl -fsSL https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/install.sh | bash
   ```
-  *(Hoặc chạy `./install.sh` nếu bạn đã tải mã nguồn về máy).*
+  *(Hoặc chạy `./scripts/install.sh` hoặc `./install.sh` nếu đã tải mã nguồn).*
 
 - **Windows (PowerShell):**
   ```powershell
   irm https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/install.ps1 | iex
   ```
-  *(Hoặc chạy `.\install.ps1` nếu bạn đã tải mã nguồn về máy).*
+  *(Hoặc chạy `.\scripts\install.ps1` hoặc `.\install.ps1` nếu đã tải mã nguồn).*
 
 Kịch bản sẽ tự động tải bản phát hành phù hợp với hệ điều hành, xác thực mã băm SHA-256, cài đặt lệnh `aam`, khởi động dịch vụ nền và mở bảng điều khiển trên trình duyệt.
 
@@ -147,10 +147,15 @@ Sau khi chuyển đổi tài khoản, các phiên làm việc CLI hoặc IDE c�
 │   │   └── device/             # Định danh thiết bị
 │   ├── Cargo.lock
 │   └── Cargo.toml
-├── install.sh                  # Kịch bản cài đặt và quản lý vòng đời trên Linux / macOS
-├── uninstall.sh                # Kịch bản gỡ cài đặt độc lập trên Linux / macOS
-├── install.ps1                 # Kịch bản cài đặt và quản lý vòng đời trên Windows PowerShell
-├── uninstall.ps1               # Kịch bản gỡ cài đặt độc lập trên Windows PowerShell
+├── scripts/                    # Thư mục chứa các kịch bản quản lý
+│   ├── install.sh              # Kịch bản cài đặt và quản lý vòng đời trên Linux / macOS
+│   ├── uninstall.sh            # Kịch bản gỡ cài đặt độc lập trên Linux / macOS
+│   ├── install.ps1             # Kịch bản cài đặt và quản lý vòng đời trên Windows PowerShell
+│   └── uninstall.ps1           # Kịch bản gỡ cài đặt độc lập trên Windows PowerShell
+├── install.sh                  # Kịch bản chuyển tiếp ở thư mục gốc trỏ đến scripts/install.sh
+├── uninstall.sh                # Kịch bản chuyển tiếp ở thư mục gốc trỏ đến scripts/uninstall.sh
+├── install.ps1                 # Kịch bản chuyển tiếp ở thư mục gốc trỏ đến scripts/install.ps1
+├── uninstall.ps1               # Kịch bản chuyển tiếp ở thư mục gốc trỏ đến scripts/uninstall.ps1
 ├── LICENSE                     # Giấy phép MIT
 ├── README.md                   # Tài liệu tiếng Anh
 └── README_VI.md                # Tài liệu tiếng Việt

@@ -34,13 +34,13 @@ Install and launch the service immediately with a single command:
   ```bash
   curl -fsSL https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/install.sh | bash
   ```
-  *(Alternatively, run `./install.sh` directly if you have already cloned the repository).*
+  *(Alternatively, run `./scripts/install.sh` or `./install.sh` directly if cloned).*
 
 - **Windows (PowerShell):**
   ```powershell
   irm https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/install.ps1 | iex
   ```
-  *(Alternatively, run `.\install.ps1` directly if cloned).*
+  *(Alternatively, run `.\scripts\install.ps1` or `.\install.ps1` directly if cloned).*
 
 The script automatically downloads the release binary for your platform, verifies integrity via SHA-256 checksum, installs the `aam` command, starts the background service, and opens the web dashboard.
 
@@ -147,10 +147,15 @@ After switching an account, existing CLI or IDE sessions pick up the active cred
 │   │   └── device/             # Device identification
 │   ├── Cargo.lock
 │   └── Cargo.toml
-├── install.sh                  # Linux / macOS installation & lifecycle script
-├── uninstall.sh                # Linux / macOS uninstallation script
-├── install.ps1                 # Windows PowerShell installation & lifecycle script
-├── uninstall.ps1               # Windows PowerShell uninstallation script
+├── scripts/                    # Management & lifecycle scripts
+│   ├── install.sh              # Linux / macOS installation & lifecycle script
+│   ├── uninstall.sh            # Linux / macOS uninstallation script
+│   ├── install.ps1             # Windows PowerShell installation & lifecycle script
+│   └── uninstall.ps1           # Windows PowerShell uninstallation script
+├── install.sh                  # Root wrapper forwarding to scripts/install.sh
+├── uninstall.sh                # Root wrapper forwarding to scripts/uninstall.sh
+├── install.ps1                 # Root wrapper forwarding to scripts/install.ps1
+├── uninstall.ps1               # Root wrapper forwarding to scripts/uninstall.ps1
 ├── LICENSE                     # MIT License
 ├── README.md                   # English documentation
 └── README_VI.md                # Vietnamese documentation
