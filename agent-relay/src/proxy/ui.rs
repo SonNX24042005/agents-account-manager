@@ -3,12 +3,75 @@ pub fn get_admin_ui_html() -> &'static str {
 <html lang="vi" class="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
   <title>Quản lý tài khoản - Agent Account Manager</title>
   <style nonce="{{CSP_NONCE}}">
     {{ADMIN_CSS}}
-    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
-    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    :root {
+      --bg-page: #f8fafc;
+      --bg-header: rgba(255, 255, 255, 0.88);
+      --bg-card: #ffffff;
+      --bg-card-subtle: #f8fafc;
+      --bg-card-active: #eff6ff;
+      --bg-well: #f1f5f9;
+      --bg-input: #ffffff;
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --text-muted: #64748b;
+      --border-subtle: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --border-active: rgba(59, 130, 246, 0.45);
+      --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+      --card-shadow-active: 0 4px 20px -2px rgba(59, 130, 246, 0.12);
+      --card-shadow-hover: 0 6px 20px rgba(0, 0, 0, 0.06);
+      --modal-bg: #ffffff;
+      --modal-overlay: rgba(15, 23, 42, 0.55);
+      --progress-track: #e2e8f0;
+      --seg-bg: #f1f5f9;
+      --seg-btn-active: #ffffff;
+      --seg-btn-active-text: #0f172a;
+      --seg-btn-text: #64748b;
+      --seg-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+    }
+
+    html.dark {
+      --bg-page: #0b0c10;
+      --bg-header: rgba(16, 18, 26, 0.88);
+      --bg-card: rgba(24, 24, 27, 0.65);
+      --bg-card-subtle: rgba(9, 9, 11, 0.6);
+      --bg-card-active: #121626;
+      --bg-well: rgba(9, 9, 11, 0.6);
+      --bg-input: #09090b;
+      --text-primary: #f4f4f5;
+      --text-secondary: #a1a1aa;
+      --text-muted: #71717a;
+      --border-subtle: rgba(39, 39, 42, 0.8);
+      --border-strong: #3f3f46;
+      --border-active: rgba(59, 130, 246, 0.5);
+      --card-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
+      --card-shadow-active: 0 0 24px rgba(59, 130, 246, 0.08);
+      --card-shadow-hover: 0 8px 24px -4px rgba(0, 0, 0, 0.6);
+      --modal-bg: #18181b;
+      --modal-overlay: rgba(0, 0, 0, 0.75);
+      --progress-track: rgb(24 24 27);
+      --seg-bg: rgba(24, 24, 27, 0.9);
+      --seg-btn-active: #27272a;
+      --seg-btn-active-text: #f4f4f5;
+      --seg-btn-text: #a1a1aa;
+      --seg-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--bg-page) !important;
+      color: var(--text-primary);
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+    header {
+      background-color: var(--bg-header) !important;
+      border-color: var(--border-subtle) !important;
+    }
+    .font-mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
     [data-lucide] { display: inline-flex; align-items: center; justify-content: center; font-style: normal; }
     [data-lucide="refresh-cw"]::before { content: '↻'; }
     [data-lucide="plus"]::before { content: '+'; }
@@ -20,40 +83,400 @@ pub fn get_admin_ui_html() -> &'static str {
     [data-lucide="arrow-right-left"]::before { content: '⇄'; }
     [data-lucide="check"]::before { content: '✓'; }
     [data-lucide="user-x"]::before { content: '∅'; }
-    .agent-tabs { display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid #27272a; }
-    .agent-tab { padding: 10px 16px; color: #a1a1aa; border-bottom: 2px solid transparent; }
-    .agent-tab[aria-selected="true"] { color: #93c5fd; border-color: #60a5fa; }
-    .agent-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px; margin-bottom: 18px; background: #18181b; border: 1px solid #27272a; border-radius: 12px; }
-    .agent-controls input { accent-color: #60a5fa; width: 18px; height: 18px; }
-    .agent-note { font-size: 12px; color: #a1a1aa; line-height: 1.6; margin-bottom: 18px; }
-    button:disabled { opacity: .5; cursor: not-allowed; }
+
+    .agent-tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid var(--border-subtle);
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .agent-tabs::-webkit-scrollbar { display: none; }
+    .agent-tab {
+      padding: 10px 18px;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 500;
+      border-bottom: 2px solid transparent;
+      border-top: none;
+      border-left: none;
+      border-right: none;
+      background: transparent;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .agent-tab:hover {
+      color: var(--text-primary);
+    }
+    .agent-tab[aria-selected="true"] {
+      color: #2563eb;
+      border-color: #2563eb;
+      font-weight: 600;
+    }
+    html.dark .agent-tab[aria-selected="true"] {
+      color: #93c5fd;
+      border-color: #60a5fa;
+    }
+
+    .agent-controls {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 12px 16px;
+      margin-bottom: 18px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      box-shadow: var(--card-shadow);
+      transition: background-color 0.2s ease, border-color 0.2s ease;
+    }
+    .agent-controls input[type="checkbox"] {
+      accent-color: #2563eb;
+      width: 17px;
+      height: 17px;
+      cursor: pointer;
+    }
+    html.dark .agent-controls input[type="checkbox"] {
+      accent-color: #60a5fa;
+    }
+    .agent-note {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-bottom: 18px;
+    }
+    .agent-note.agent-error-alert {
+      color: #ef4444;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      padding: 10px 14px;
+      border-radius: 8px;
+    }
+    button:disabled { opacity: .5; cursor: not-allowed !important; }
     [hidden] { display: none !important; }
-    .quota-progress { appearance: none; display: block; width: 100%; height: 0.25rem; overflow: hidden; border: 1px solid rgb(39 39 42); border-radius: 9999px; background: rgb(24 24 27); }
-    .quota-progress::-webkit-progress-bar { background: rgb(24 24 27); }
-    .quota-progress::-webkit-progress-value { background: linear-gradient(to right, #2563eb, #38bdf8); }
-    .quota-progress.low::-webkit-progress-value { background: #fbbf24; }
-    .quota-progress::-moz-progress-bar { background: linear-gradient(to right, #2563eb, #38bdf8); }
-    .quota-progress.low::-moz-progress-bar { background: #fbbf24; }
+
+    .quota-progress {
+      appearance: none;
+      display: block;
+      width: 100%;
+      height: 0.35rem;
+      overflow: hidden;
+      border: 1px solid var(--border-subtle);
+      border-radius: 9999px;
+      background: var(--progress-track);
+      transition: all 0.2s ease;
+    }
+    .quota-progress::-webkit-progress-bar { background: var(--progress-track); }
+    .quota-progress::-webkit-progress-value { background: linear-gradient(to right, #2563eb, #38bdf8); border-radius: 9999px; }
+    .quota-progress.low::-webkit-progress-value { background: #f59e0b; }
+    .quota-progress.exhausted::-webkit-progress-value { background: #ef4444; }
+    .quota-progress::-moz-progress-bar { background: linear-gradient(to right, #2563eb, #38bdf8); border-radius: 9999px; }
+    .quota-progress.low::-moz-progress-bar { background: #f59e0b; }
+    .quota-progress.exhausted::-moz-progress-bar { background: #ef4444; }
+
+    .theme-segmented-group {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px;
+      background: var(--seg-bg);
+      border: 1px solid var(--border-subtle);
+      border-radius: 9px;
+      gap: 2px;
+      transition: background-color 0.2s ease, border-color 0.2s ease;
+    }
+    .theme-seg-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--seg-btn-text);
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      line-height: 1;
+    }
+    .theme-seg-btn:hover {
+      color: var(--text-primary);
+    }
+    .theme-seg-btn.active {
+      background: var(--seg-btn-active);
+      color: var(--seg-btn-active-text);
+      box-shadow: var(--seg-shadow);
+      font-weight: 600;
+    }
+
+    .account-card {
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    }
+    .account-card:hover {
+      transform: translateY(-1px);
+    }
+    .stat-card {
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    }
+    .stat-card:hover {
+      transform: translateY(-1px);
+    }
+
+    #add-menu {
+      width: 360px !important;
+      max-width: calc(100vw - 2rem) !important;
+    }
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      white-space: nowrap;
+      flex-shrink: 0;
+      font-size: 10px;
+      font-weight: 500;
+      line-height: 1;
+      padding: 2.5px 7px;
+      border-radius: 9999px;
+      background-color: rgba(59, 130, 246, 0.15);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+    .app-logo-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 9px;
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(59, 130, 246, 0.08));
+      border: 1px solid rgba(59, 130, 246, 0.35);
+      color: #60a5fa;
+      transition: all 0.2s ease;
+    }
+    .app-logo-badge:hover {
+      border-color: rgba(59, 130, 246, 0.55);
+      box-shadow: 0 0 12px rgba(59, 130, 246, 0.2);
+    }
+    .app-logo-badge svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    /* Light theme styling adaptations */
+    html:not(.dark) body {
+      background-color: var(--bg-page) !important;
+      color: var(--text-secondary) !important;
+    }
+    html:not(.dark) header {
+      background-color: var(--bg-header) !important;
+      border-color: var(--border-subtle) !important;
+    }
+    html:not(.dark) .text-zinc-100 { color: #0f172a !important; }
+    html:not(.dark) .text-zinc-200 { color: #1e293b !important; }
+    html:not(.dark) .text-zinc-300 { color: #334155 !important; }
+    html:not(.dark) .text-zinc-400 { color: #64748b !important; }
+    html:not(.dark) .text-zinc-500 { color: #94a3b8 !important; }
+
+    html:not(.dark) .bg-zinc-900,
+    html:not(.dark) .bg-zinc-900\/50,
+    html:not(.dark) .bg-zinc-900\/60,
+    html:not(.dark) .bg-zinc-900\/90 {
+      background-color: var(--bg-card) !important;
+      border-color: var(--border-subtle) !important;
+    }
+    html:not(.dark) .bg-zinc-950,
+    html:not(.dark) .bg-zinc-950\/60,
+    html:not(.dark) .bg-zinc-950\/80 {
+      background-color: var(--bg-card-subtle) !important;
+    }
+    html:not(.dark) .bg-zinc-800 {
+      background-color: var(--bg-well) !important;
+    }
+    html:not(.dark) .border-zinc-800,
+    html:not(.dark) .border-zinc-800\/60,
+    html:not(.dark) .border-zinc-800\/80 {
+      border-color: var(--border-subtle) !important;
+    }
+    html:not(.dark) .border-zinc-700,
+    html:not(.dark) .border-zinc-700\/60 {
+      border-color: var(--border-strong) !important;
+    }
+    html:not(.dark) .hover\:bg-zinc-800:hover,
+    html:not(.dark) .hover\:bg-zinc-800\/80:hover {
+      background-color: #f1f5f9 !important;
+    }
+    html:not(.dark) .hover\:bg-zinc-700:hover {
+      background-color: #e2e8f0 !important;
+    }
+    html:not(.dark) .hover\:border-zinc-700:hover {
+      border-color: #cbd5e1 !important;
+    }
+    html:not(.dark) .hover\:text-zinc-200:hover {
+      color: #0f172a !important;
+    }
+    html:not(.dark) .group:hover .group-hover\:text-zinc-200,
+    html:not(.dark) .group:hover .group-hover\:text-white {
+      color: #0f172a !important;
+    }
+    html:not(.dark) .group:hover .group-hover\:bg-zinc-700 {
+      background-color: #e2e8f0 !important;
+    }
+
+    html:not(.dark) .bg-\[\#121626\] {
+      background-color: var(--bg-card-active) !important;
+      border-color: rgba(59, 130, 246, 0.4) !important;
+      box-shadow: 0 4px 20px -2px rgba(59, 130, 246, 0.12) !important;
+    }
+    html:not(.dark) .bg-blue-950\/80 {
+      background-color: #dbeafe !important;
+      color: #1d4ed8 !important;
+      border-color: rgba(59, 130, 246, 0.3) !important;
+    }
+    html:not(.dark) .text-blue-300,
+    html:not(.dark) .text-blue-400 {
+      color: #2563eb !important;
+    }
+    html:not(.dark) .bg-blue-400 {
+      background-color: #2563eb !important;
+    }
+    html:not(.dark) .bg-blue-500\/10,
+    html:not(.dark) .bg-blue-600\/10 {
+      background-color: rgba(37, 99, 235, 0.08) !important;
+    }
+    html:not(.dark) .border-blue-500\/20,
+    html:not(.dark) .border-blue-500\/30,
+    html:not(.dark) .border-blue-500\/40 {
+      border-color: rgba(37, 99, 235, 0.25) !important;
+    }
+
+    html:not(.dark) input:not([type="checkbox"]):not([type="file"]),
+    html:not(.dark) select,
+    html:not(.dark) textarea {
+      background-color: var(--bg-input) !important;
+      border-color: var(--border-strong) !important;
+      color: var(--text-primary) !important;
+    }
+    html:not(.dark) input:focus,
+    html:not(.dark) select:focus,
+    html:not(.dark) textarea:focus {
+      border-color: #3b82f6 !important;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
+    }
+
+    html:not(.dark) #native-modal > div,
+    html:not(.dark) #codex-login-modal > div,
+    html:not(.dark) #add-modal > div {
+      background-color: var(--modal-bg) !important;
+      border-color: var(--border-subtle) !important;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+    }
+    html:not(.dark) #native-modal,
+    html:not(.dark) #codex-login-modal,
+    html:not(.dark) #add-modal {
+      background-color: var(--modal-overlay) !important;
+    }
+    html:not(.dark) #native-cancel,
+    html:not(.dark) #codex-login-cancel-btn,
+    html:not(.dark) #cancel-add-btn {
+      background-color: #f1f5f9 !important;
+      color: #334155 !important;
+      border: 1px solid #cbd5e1;
+    }
+    html:not(.dark) #native-cancel:hover,
+    html:not(.dark) #codex-login-cancel-btn:hover,
+    html:not(.dark) #cancel-add-btn:hover {
+      background-color: #e2e8f0 !important;
+      color: #0f172a !important;
+    }
+
+    html:not(.dark) #add-menu {
+      background-color: #ffffff !important;
+      border-color: var(--border-subtle) !important;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05) !important;
+    }
+    html:not(.dark) .badge-pill {
+      background-color: #eff6ff !important;
+      color: #2563eb !important;
+      border-color: #bfdbfe !important;
+    }
+    html:not(.dark) .app-logo-badge {
+      background: linear-gradient(135deg, #eff6ff, #dbeafe) !important;
+      border-color: #bfdbfe !important;
+      color: #2563eb !important;
+      box-shadow: 0 1px 3px rgba(37, 99, 235, 0.08) !important;
+    }
+    html:not(.dark) .app-logo-badge .logo-back-card {
+      stroke: #3b82f6 !important;
+      stroke-opacity: 0.5 !important;
+    }
+    html:not(.dark) .switch-account-btn {
+      background-color: #f1f5f9 !important;
+      color: #1e293b !important;
+      border-color: #cbd5e1 !important;
+    }
+    html:not(.dark) .switch-account-btn:hover:not(:disabled) {
+      background-color: #e2e8f0 !important;
+      color: #0f172a !important;
+      border-color: #94a3b8 !important;
+    }
+    html:not(.dark) .bg-zinc-900\/20 {
+      background-color: #f1f5f9 !important;
+      border-color: #cbd5e1 !important;
+    }
   </style>
 </head>
 <body class="bg-[#0b0c10] text-zinc-200 min-h-screen antialiased selection:bg-blue-600/30">
   <!-- Header -->
   <header class="border-b border-zinc-800/80 bg-[#10121a]/80 backdrop-blur sticky top-0 z-40">
-    <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-blue-600/10 border border-blue-500/30 flex items-center justify-center text-sm font-semibold text-blue-400">
-          A
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-2 sm:gap-3">
+      <div class="flex items-center gap-2.5 sm:gap-3 min-w-0">
+        <div class="app-logo-badge flex-shrink-0" title="Agent Account Manager">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 4h11.5A2.5 2.5 0 0 1 21 6.5V16" stroke-opacity="0.6" class="logo-back-card"/>
+            <rect x="3" y="7" width="14" height="13" rx="2.8"/>
+            <path d="M6.8 13.5a3.2 3.2 0 0 1 3.2-3.2 3.5 3.5 0 0 1 2.4 1l1.1 1.1"/>
+            <path d="M13.5 10v2.4h-2.4"/>
+            <path d="M13.2 13.5a3.2 3.2 0 0 1-3.2 3.2 3.5 3.5 0 0 1-2.4-1l-1.1-1.1"/>
+            <path d="M6.5 17v-2.4h2.4"/>
+          </svg>
         </div>
-        <div>
-          <h1 class="text-sm font-semibold text-zinc-100">Quản lý tài khoản</h1>
+        <div class="min-w-0">
+          <h1 class="text-sm font-semibold text-zinc-100 truncate">Quản lý tài khoản</h1>
         </div>
       </div>
-      <div class="flex items-center gap-3">
-        <div class="flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-mono bg-zinc-900/90 border border-zinc-800 text-zinc-300">
+      <div class="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+        <div class="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-mono bg-zinc-900/90 border border-zinc-800 text-zinc-300">
           <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
           <span id="relay-address">Đang kết nối...</span>
         </div>
-        <button id="refresh-btn" title="Làm mới" class="p-1.5 hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-zinc-200 transition">
+        <div id="theme-selector" class="theme-segmented-group" role="radiogroup" aria-label="Giao diện">
+          <button type="button" id="theme-btn-system" class="theme-seg-btn active" data-theme-val="system" title="Theo hệ thống" aria-checked="true">
+            <svg class="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+            <span class="theme-label hidden sm:inline">Hệ thống</span>
+          </button>
+          <button type="button" id="theme-btn-light" class="theme-seg-btn" data-theme-val="light" title="Giao diện sáng" aria-checked="false">
+            <svg class="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="4"/>
+              <path d="M12 2v2 M12 20v2 M4.93 4.93l1.41 1.41 M17.66 17.66l1.41 1.41 M2 12h2 M20 12h2 M6.34 17.66l-1.41 1.41 M19.07 4.93l-1.41 1.41"/>
+            </svg>
+            <span class="theme-label hidden sm:inline">Sáng</span>
+          </button>
+          <button type="button" id="theme-btn-dark" class="theme-seg-btn" data-theme-val="dark" title="Giao diện tối" aria-checked="false">
+            <svg class="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+            </svg>
+            <span class="theme-label hidden sm:inline">Tối</span>
+          </button>
+        </div>
+        <button id="refresh-btn" title="Làm mới" class="p-1.5 hover:bg-zinc-800 rounded-md text-zinc-400 hover:text-zinc-200 transition flex items-center justify-center">
           <i data-lucide="refresh-cw" class="w-4 h-4 text-zinc-400"></i>
         </button>
       </div>
@@ -61,7 +484,7 @@ pub fn get_admin_ui_html() -> &'static str {
   </header>
 
   <!-- Main Content -->
-  <main class="max-w-6xl mx-auto px-6 py-8">
+  <main class="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
     <nav class="agent-tabs" role="tablist" aria-label="Agent">
       <button id="tab-antigravity" class="agent-tab" role="tab" aria-selected="true" aria-controls="agent-panel" data-agent="antigravity">Antigravity</button>
       <button id="tab-codex" class="agent-tab" role="tab" aria-selected="false" aria-controls="agent-panel" tabindex="-1" data-agent="codex">Codex</button>
@@ -69,14 +492,14 @@ pub fn get_admin_ui_html() -> &'static str {
     </nav>
     <section id="agent-panel" role="tabpanel" aria-labelledby="tab-antigravity">
     <div class="agent-controls">
-      <label class="flex items-center gap-2 text-xs" for="auto-select-toggle">
+      <label class="flex items-center gap-2.5 text-xs cursor-pointer select-none" for="auto-select-toggle">
         <input type="checkbox" id="auto-select-toggle" role="switch" disabled>
-        Tự động chọn tài khoản có nhiều quota nhất
+        <span class="font-medium text-zinc-200">Tự động chọn tài khoản có nhiều quota nhất</span>
       </label>
       <span id="auto-select-status" class="text-xs text-zinc-400">Đang tải cấu hình...</span>
     </div>
     <p id="agent-note" class="agent-note"></p>
-    <p id="agent-error" role="alert" class="agent-note" hidden></p>
+    <p id="agent-error" role="alert" class="agent-note agent-error-alert" hidden></p>
     <!-- Action & summary bar -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
       <div>
@@ -86,14 +509,14 @@ pub fn get_admin_ui_html() -> &'static str {
 
       <!-- Add Account Dropdown Menu -->
       <div class="relative">
-        <button id="add-account-btn" class="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition flex items-center gap-1.5 cursor-pointer">
+        <button id="add-account-btn" class="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition flex items-center gap-1.5 cursor-pointer flex-shrink-0">
           <i data-lucide="plus" class="w-3.5 h-3.5"></i>
           Thêm tài khoản
           <i data-lucide="chevron-down" class="w-3.5 h-3.5 ml-0.5 text-blue-200"></i>
         </button>
 
         <!-- Dropdown Menu -->
-        <div id="add-menu" class="absolute right-0 mt-2 w-72 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl p-1.5 z-50 hidden">
+        <div id="add-menu" class="absolute right-0 mt-2 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl p-1.5 z-50 hidden">
           <div class="px-2.5 py-1.5 text-[10px] font-medium text-zinc-500 tracking-wider">
             Chọn phương thức thêm
           </div>
@@ -103,12 +526,12 @@ pub fn get_admin_ui_html() -> &'static str {
             <div class="w-7 h-7 rounded-md bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center flex-shrink-0 mt-0.5 group-hover:bg-blue-500 group-hover:text-white transition">
               <i data-lucide="globe" class="w-4 h-4"></i>
             </div>
-            <div>
-              <div class="text-xs font-semibold text-zinc-200 group-hover:text-white flex items-center gap-1.5">
-                <span id="oauth-option-title">Đăng nhập Google</span>
-                <span id="oauth-option-badge" class="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 font-normal">Khuyên dùng</span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span id="oauth-option-title" class="text-xs font-semibold text-zinc-200 group-hover:text-white">Đăng nhập Google</span>
+                <span id="oauth-option-badge" class="badge-pill">Khuyên dùng</span>
               </div>
-              <div id="oauth-option-desc" class="text-[10px] text-zinc-400 mt-0.5 leading-snug">
+              <div id="oauth-option-desc" class="text-[10px] text-zinc-400 mt-1 leading-snug">
                 Tự động xác thực qua trình duyệt và tự động làm mới token
               </div>
             </div>
@@ -119,11 +542,11 @@ pub fn get_admin_ui_html() -> &'static str {
             <div class="w-7 h-7 rounded-md bg-zinc-800 border border-zinc-700/60 text-zinc-400 flex items-center justify-center flex-shrink-0 mt-0.5 group-hover:bg-zinc-700 group-hover:text-zinc-200 transition">
               <i data-lucide="key" class="w-4 h-4"></i>
             </div>
-            <div>
+            <div class="flex-1 min-w-0">
               <div id="direct-option-title" class="text-xs font-semibold text-zinc-200 group-hover:text-white">
                 Nhập token thủ công
               </div>
-              <div id="direct-option-desc" class="text-[10px] text-zinc-400 mt-0.5 leading-snug">
+              <div id="direct-option-desc" class="text-[10px] text-zinc-400 mt-1 leading-snug">
                 Dán access token hoặc refresh token trực tiếp
               </div>
             </div>
@@ -134,18 +557,18 @@ pub fn get_admin_ui_html() -> &'static str {
 
     <!-- Quick Stats & Intelligent Routing -->
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
-      <div class="p-3.5 rounded-xl bg-zinc-900/50 border border-zinc-800/80 flex flex-col justify-between">
+      <div class="stat-card p-3.5 sm:p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 flex flex-col justify-between">
         <span class="text-xs text-zinc-400">Tổng số tài khoản</span>
         <div class="text-xl font-semibold text-zinc-100 mt-1" id="stat-total">0</div>
       </div>
 
-      <div class="p-3.5 rounded-xl bg-zinc-900/50 border border-zinc-800/80 flex flex-col justify-between">
+      <div class="stat-card p-3.5 sm:p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 flex flex-col justify-between">
         <span class="text-xs text-zinc-400">Tài khoản đang dùng</span>
         <div class="text-xl font-semibold text-blue-400 mt-1 truncate" id="stat-active">Chưa có</div>
       </div>
 
       <!-- Model routing preference -->
-      <div id="antigravity-preference" class="p-3.5 rounded-xl bg-zinc-900/50 border border-zinc-800/80 flex flex-col justify-between">
+      <div id="antigravity-preference" class="stat-card p-3.5 sm:p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 flex flex-col justify-between">
         <div class="flex items-center justify-between gap-2">
           <span class="text-xs text-zinc-400">Chế độ tự động chọn</span>
           <select id="pref-select" class="bg-zinc-950 border border-zinc-800 text-[11px] text-zinc-200 rounded-md px-2 py-0.5 focus:outline-none focus:border-blue-500">
@@ -174,25 +597,25 @@ pub fn get_admin_ui_html() -> &'static str {
   </main>
 
   <div id="native-modal" role="dialog" aria-modal="true" aria-labelledby="native-title" class="fixed inset-0 bg-zinc-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" hidden>
-    <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5 w-full max-w-md shadow-2xl">
+    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 sm:p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
       <h3 id="native-title" class="text-sm font-semibold text-zinc-100">Thêm tài khoản</h3>
       <p id="native-help" class="agent-note"></p>
       <label for="native-email" class="block text-xs text-zinc-400 mb-1">Email hoặc tên tài khoản</label>
-      <input id="native-email" maxlength="254" autocomplete="off" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200">
+      <input id="native-email" maxlength="254" autocomplete="off" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm sm:text-xs text-zinc-200">
       <label for="native-file" class="block text-xs text-zinc-400 mt-3 mb-1">Tệp đăng nhập JSON (tùy chọn)</label>
       <input id="native-file" type="file" accept=".json,application/json" class="text-xs text-zinc-400 w-full">
       <p class="agent-note">Để trống tệp để nhập phiên đăng nhập hiện tại trên máy chạy dịch vụ. Lặp lại sau khi đăng nhập tài khoản khác để thêm vào danh sách.</p>
       <p id="native-error" role="alert" class="text-xs text-zinc-400"></p>
       <div class="flex items-center justify-between mt-5">
-        <button id="native-cancel" class="px-3 py-1.5 rounded-lg bg-zinc-800 text-xs">Đóng</button>
-        <button id="native-save" class="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs">Nhập tài khoản</button>
+        <button id="native-cancel" class="px-3 py-1.5 rounded-lg bg-zinc-800 text-xs cursor-pointer">Đóng</button>
+        <button id="native-save" class="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs cursor-pointer">Nhập tài khoản</button>
       </div>
     </div>
   </div>
 
   <!-- Modal: Codex browser login -->
   <div id="codex-login-modal" role="dialog" aria-modal="true" aria-labelledby="codex-login-title" class="fixed inset-0 bg-zinc-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" hidden>
-    <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5 w-full max-w-md shadow-2xl">
+    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 sm:p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
       <div class="flex items-center justify-between mb-3">
         <h3 id="codex-login-title" class="text-sm font-semibold text-zinc-100">Đăng nhập Codex qua trình duyệt</h3>
         <button id="codex-login-close-btn" class="text-zinc-400 hover:text-zinc-200 cursor-pointer">
@@ -231,7 +654,7 @@ pub fn get_admin_ui_html() -> &'static str {
 
   <!-- Modal: Add direct token -->
   <div id="add-modal" class="fixed inset-0 bg-zinc-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
-    <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5 w-full max-w-md shadow-2xl">
+    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 sm:p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto">
       <div class="flex items-center justify-between mb-4">
         <div>
           <h3 class="text-sm font-semibold text-zinc-100">Nhập token thủ công</h3>
@@ -244,15 +667,15 @@ pub fn get_admin_ui_html() -> &'static str {
       <div class="space-y-3.5">
         <div>
           <label class="block text-xs font-medium text-zinc-400 mb-1">Email Google</label>
-          <input id="input-email" type="email" placeholder="user@gmail.com" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500 text-zinc-200">
+          <input id="input-email" type="email" placeholder="user@gmail.com" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm sm:text-xs focus:outline-none focus:border-blue-500 text-zinc-200">
         </div>
         <div>
           <label class="block text-xs font-medium text-zinc-400 mb-1">Access token</label>
-          <textarea id="input-access-token" rows="3" placeholder="ya29.a0..." class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500 font-mono text-zinc-200"></textarea>
+          <textarea id="input-access-token" rows="3" placeholder="ya29.a0..." class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm sm:text-xs focus:outline-none focus:border-blue-500 font-mono text-zinc-200"></textarea>
         </div>
         <div>
           <label class="block text-xs font-medium text-zinc-400 mb-1">Refresh token (tùy chọn)</label>
-          <input id="input-refresh-token" type="text" placeholder="1//04..." class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-blue-500 font-mono text-zinc-200">
+          <input id="input-refresh-token" type="text" placeholder="1//04..." class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm sm:text-xs focus:outline-none focus:border-blue-500 font-mono text-zinc-200">
         </div>
       </div>
       <div class="flex items-center justify-between mt-5 pt-3 border-t border-zinc-800">
@@ -276,6 +699,92 @@ pub fn get_admin_ui_html() -> &'static str {
     let settingsBusy = false;
     let settingsRequest = 0;
     const agentNames = { antigravity: 'Antigravity', codex: 'Codex', claude: 'Claude' };
+
+    // Theme Management
+    const THEME_KEY = 'aam_theme_preference';
+
+    function getStoredTheme() {
+      try {
+        if (typeof localStorage !== 'undefined') {
+          return localStorage.getItem(THEME_KEY) || 'system';
+        }
+      } catch (e) {}
+      return 'system';
+    }
+
+    function setStoredTheme(theme) {
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(THEME_KEY, theme);
+        }
+      } catch (e) {}
+    }
+
+    function isSystemDark() {
+      if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+        try {
+          return window.matchMedia('(prefers-color-scheme: dark)').matches;
+        } catch (e) {}
+      }
+      return true;
+    }
+
+    function applyTheme(pref) {
+      const isDark = pref === 'dark' || (pref === 'system' && isSystemDark());
+      const root = document.documentElement;
+      if (root) {
+        if (isDark) {
+          root.classList.add('dark');
+          root.classList.remove('light');
+        } else {
+          root.classList.remove('dark');
+          root.classList.add('light');
+        }
+      }
+
+      ['system', 'light', 'dark'].forEach(t => {
+        const btn = document.getElementById('theme-btn-' + t);
+        if (btn) {
+          if (t === pref) {
+            btn.classList.add('active');
+            btn.setAttribute('aria-checked', 'true');
+          } else {
+            btn.classList.remove('active');
+            btn.setAttribute('aria-checked', 'false');
+          }
+        }
+      });
+    }
+
+    function initTheme() {
+      const pref = getStoredTheme();
+      applyTheme(pref);
+
+      if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+        try {
+          const media = window.matchMedia('(prefers-color-scheme: dark)');
+          if (media && typeof media.addEventListener === 'function') {
+            media.addEventListener('change', () => {
+              if (getStoredTheme() === 'system') {
+                applyTheme('system');
+              }
+            });
+          }
+        } catch (e) {}
+      }
+
+      ['system', 'light', 'dark'].forEach(t => {
+        const btn = document.getElementById('theme-btn-' + t);
+        if (btn) {
+          btn.addEventListener('click', () => {
+            setStoredTheme(t);
+            applyTheme(t);
+          });
+        }
+      });
+    }
+
+    initTheme();
 
     function showError(message) {
       const node = document.getElementById('agent-error');
@@ -713,7 +1222,7 @@ pub fn get_admin_ui_html() -> &'static str {
         const safeInitials = escapeHtml(acc.email.substring(0, 2).toUpperCase());
 
         return `
-          <div class="p-4 rounded-xl transition flex flex-col justify-between ${
+          <div class="account-card p-4 rounded-xl transition flex flex-col justify-between ${
             isActive
               ? 'bg-[#121626] border border-blue-500/50 shadow-[0_0_24px_rgba(59,130,246,0.06)]'
               : 'bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700'
@@ -745,7 +1254,7 @@ pub fn get_admin_ui_html() -> &'static str {
                           Sẵn sàng
                         </span>`
                   }
-                  <button data-account-id="${safeId}" data-account-email="${safeEmail}" title="Xóa tài khoản" class="delete-account-btn p-1 hover:bg-zinc-800 text-zinc-500 hover:text-red-400 rounded-md transition flex items-center justify-center cursor-pointer">
+                  <button data-account-id="${safeId}" data-account-email="${safeEmail}" title="Xóa tài khoản" class="delete-account-btn p-1.5 hover:bg-zinc-800 text-zinc-500 hover:text-red-400 rounded-md transition flex items-center justify-center cursor-pointer">
                     <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                   </button>
                 </div>
@@ -879,7 +1388,7 @@ pub fn get_admin_ui_html() -> &'static str {
 
         if (diffMs <= 0) {
           return {
-            text: is5h ? 'Đã hồi phục (100% - Chu kỳ 5h)' : (isWeekly ? 'Đã hồi phục (100% - Chu kỳ tuần)' : 'Đã hồi phục (100%)'),
+            text: is5h ? 'Đã hồi phục (100% - chu kỳ 5h)' : (isWeekly ? 'Đã hồi phục (100% - chu kỳ tuần)' : 'Đã hồi phục (100%)'),
             isExpired: true
           };
         }
