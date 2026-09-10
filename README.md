@@ -32,15 +32,15 @@ Install and launch the service immediately with a single command:
 
 - **Linux / macOS:**
   ```bash
-  curl -fsSL https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/scripts/install.sh | bash
   ```
-  *(Alternatively, run `./scripts/install.sh` or `./install.sh` directly if cloned).*
+  *(Alternatively, run `./scripts/install.sh` directly if you have already cloned the repository).*
 
 - **Windows (PowerShell):**
   ```powershell
-  irm https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/install.ps1 | iex
+  irm https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/scripts/install.ps1 | iex
   ```
-  *(Alternatively, run `.\scripts\install.ps1` or `.\install.ps1` directly if cloned).*
+  *(Alternatively, run `.\scripts\install.ps1` directly if cloned).*
 
 The script automatically downloads the release binary for your platform, verifies integrity via SHA-256 checksum, installs the `aam` command, starts the background service, and opens the web dashboard.
 
@@ -102,16 +102,16 @@ If you prefer to uninstall without using the CLI command:
 
 - **Linux / macOS:**
   ```bash
-  curl -fsSL https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/uninstall.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/scripts/uninstall.sh | bash
   # Or purge all account data:
-  curl -fsSL https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/uninstall.sh | bash -s -- --purge
+  curl -fsSL https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/scripts/uninstall.sh | bash -s -- --purge
   ```
 
 - **Windows (PowerShell):**
   ```powershell
-  irm https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/uninstall.ps1 | iex
+  irm https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/scripts/uninstall.ps1 | iex
   # Or purge all account data:
-  .\uninstall.ps1 -Purge
+  .\scripts\uninstall.ps1 -Purge
   ```
 
 Local web dashboard URL: [http://127.0.0.1:8045](http://127.0.0.1:8045)
@@ -152,10 +152,6 @@ After switching an account, existing CLI or IDE sessions pick up the active cred
 │   ├── uninstall.sh            # Linux / macOS uninstallation script
 │   ├── install.ps1             # Windows PowerShell installation & lifecycle script
 │   └── uninstall.ps1           # Windows PowerShell uninstallation script
-├── install.sh                  # Root wrapper forwarding to scripts/install.sh
-├── uninstall.sh                # Root wrapper forwarding to scripts/uninstall.sh
-├── install.ps1                 # Root wrapper forwarding to scripts/install.ps1
-├── uninstall.ps1               # Root wrapper forwarding to scripts/uninstall.ps1
 ├── LICENSE                     # MIT License
 ├── README.md                   # English documentation
 └── README_VI.md                # Vietnamese documentation
