@@ -1,61 +1,61 @@
-# Agent Account Manager
+# Quản lý tài khoản agent
 
 <p align="left">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-1.80%2B-orange.svg" alt="Rust 1.80+"></a>
-  <a href="#cài-đặt-và-sử-dụng"><img src="https://img.shields.io/badge/nền_tảng-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg" alt="Nền tảng: Linux | macOS | Windows"></a>
+  <a href="#cài-đặt-và-sử-dụng"><img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg" alt="Platform: Linux | macOS | Windows"></a>
   <a href="https://github.com/SonNX24042005/agents-account-manager"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
 </p>
 
 [English](README.md) | [Tiếng Việt](README_VI.md)
 
-Hệ thống quản trị đa tài khoản và điều phối hạn ngạch thông minh dành cho các AI coding agent, bao gồm **Antigravity CLI (`agy`)**, **Antigravity IDE**, **Claude Code**, **Cursor** và các agent trong hệ sinh thái AI coding.
+Công cụ quản lý đa tài khoản và điều phối hạn ngạch thông minh dành cho các agent lập trình AI, bao gồm **Antigravity**, **Claude Code** và **Codex**.
 
 ---
 
-## Tính năng chính
+## Tính năng nổi bật
 
-- **Hỗ trợ đa agent (Multi-agent ready)**: Thiết kế mở rộng để quản lý tài khoản, làm mới token và điều phối hạn ngạch cho nhiều coding agent khác nhau thay vì phụ thuộc vào một công cụ duy nhất.
-- **Chuyển tài khoản siêu tốc 1-click**: Tự động đồng bộ sang OS Keyring (GNOME Keyring / Linux Secret Service) và cơ sở dữ liệu SQLite của Antigravity IDE (`state.vscdb`) trong chưa đầy 2ms.
-- **Không gây ô nhiễm môi trường**: Chạy 100% độc lập, không chèn biến môi trường hay chỉnh sửa file shell (`.bashrc`, `.zshrc`), kết nối trực tiếp đến nhà cung cấp mô hình với tốc độ tối đa.
-- **Tra cứu hạn ngạch theo thời gian thực**: Theo dõi hạn ngạch 5 giờ và hàng tuần của các nhóm mô hình (Gemini, Claude & GPT) kèm thời gian đếm ngược reset chính xác.
-- **Tự động chọn tài khoản tốt nhất**: Tự động đánh giá và chọn tài khoản có hạn ngạch khả dụng cao nhất mỗi khi agent thực thi tác vụ.
-- **Giao diện web tối giản**: Bảng điều khiển gọn gàng, tinh tế theo phong cách dark mode tối giản tại `http://127.0.0.1:8045`.
+- **Hỗ trợ đa agent**: Quản lý nhiều tài khoản và hạn ngạch tập trung cho Antigravity, Claude Code và Codex trong cùng một nơi.
+- **Chuyển đổi tài khoản tức thì**: Đổi tài khoản hoạt động nhanh chóng qua giao diện mà không cần sao chép thủ công thông tin đăng nhập.
+- **Tự động chọn tài khoản thông minh**: Tự động nhận diện và chuyển sang tài khoản còn nhiều hạn ngạch nhất khi tài khoản hiện tại sắp hết mức sử dụng.
+- **Theo dõi hạn ngạch trực quan**: Cập nhật liên tục số lượng yêu cầu còn lại, giới hạn sử dụng và thời gian đặt lại hạn ngạch của từng tài khoản.
+- **Không can thiệp môi trường hệ thống**: Hoạt động nền độc lập, không sửa đổi các tệp cấu hình shell (`.bashrc`, `.zshrc`) và không tạo alias phức tạp.
+- **Bảng điều khiển web cục bộ**: Giao diện tối giản, trực quan, hỗ trợ chế độ tối tại địa chỉ `http://127.0.0.1:8045`.
 
 ---
 
 ## Cài đặt và sử dụng
 
-### 1. Cài đặt nhanh 1 dòng lệnh (không cần clone repo)
+### 1. Cài đặt nhanh 1 dòng lệnh
 
-Tương tự như `claude code` hay `rustup`, bạn có thể cài đặt ngay lập tức ở bất kỳ máy nào:
+Cài đặt và khởi chạy dịch vụ ngay lập tức với một câu lệnh:
 
 - **Linux / macOS:**
   ```bash
   curl -fsSL https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/install.sh | bash
   ```
-  *(Hoặc nếu đã tải mã nguồn về máy, bạn có thể chạy trực tiếp `./install.sh`)*
+  *(Hoặc chạy `./install.sh` nếu bạn đã tải mã nguồn về máy).*
 
 - **Windows (PowerShell):**
   ```powershell
   irm https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/install.ps1 | iex
   ```
-  *(Hoặc chạy `.\install.ps1` nếu đã tải mã nguồn).*
+  *(Hoặc chạy `.\install.ps1` nếu bạn đã tải mã nguồn về máy).*
 
-Lệnh này tự động tải bản phát hành phù hợp, xác minh checksum SHA-256, cài đặt tệp thực thi, khởi động dịch vụ và mở bảng điều khiển. Người dùng không phải cấu hình thủ công master key. Những lần sau chỉ cần chạy lệnh `aam` để mở lại bảng điều khiển với một phiên an toàn mới.
+Kịch bản sẽ tự động tải bản phát hành phù hợp với hệ điều hành, xác thực mã băm SHA-256, cài đặt lệnh `aam`, khởi động dịch vụ nền và mở bảng điều khiển trên trình duyệt.
 
-### 2. Các tùy chọn lệnh (`aam`)
+### 2. Các lệnh điều khiển (`aam`)
 
 - **Mở bảng điều khiển (mặc định):**
   ```bash
   aam
   ```
 
-- **Tự động chạy liên tục cùng hệ thống (khuyên dùng - auto-start on boot):**
+- **Tự khởi động cùng hệ thống (khuyên dùng):**
   ```bash
   aam autostart
   ```
-  *Dịch vụ sẽ tự khởi động ngầm mỗi khi mở máy, tự động hồi phục và bật lại sau 3 giây nếu bị tắt. Muốn dừng hoàn toàn chỉ cần gõ `aam stop` hoặc `aam disable`.*
+  *Dịch vụ sẽ tự động chạy ngầm mỗi khi bật máy và tự phục hồi nếu bị dừng. Để tắt, chạy lệnh `aam disable`.*
 
 - **Khởi chạy dịch vụ chạy ngầm:**
   ```bash
@@ -72,17 +72,17 @@ Lệnh này tự động tải bản phát hành phù hợp, xác minh checksum 
   aam stop
   ```
 
-- **Cập nhật lên phiên bản mới nhất:**
-  ```bash
-  aam update
-  ```
-
 - **Khởi động lại dịch vụ:**
   ```bash
   aam restart
   ```
 
-- **Cài đặt lại:**
+- **Cập nhật lên phiên bản mới nhất:**
+  ```bash
+  aam update
+  ```
+
+- **Cài đặt lại binary:**
   ```bash
   aam reinstall
   ```
@@ -114,42 +114,24 @@ Nếu bạn muốn gỡ cài đặt trực tiếp mà không dùng lệnh CLI:
   .\uninstall.ps1 -Purge
   ```
 
-Truy cập bảng điều khiển web tại: [http://127.0.0.1:8045](http://127.0.0.1:8045)
-
-### 4. Tự động đồng bộ không cần alias
-
-Khi dịch vụ `aam` đang chạy, hệ thống sẽ tự động quét hạn ngạch ngầm và duy trì tài khoản tối ưu nhất vào OS Keyring và cấu hình agent. Bạn chỉ cần sử dụng các công cụ agent bình thường mà **không cần tạo bất kỳ alias hay cấu hình shell phức tạp nào**.
+Địa chỉ bảng điều khiển web: [http://127.0.0.1:8045](http://127.0.0.1:8045)
 
 ---
 
-## Quản lý Antigravity, Codex và Claude
+## Quản lý tài khoản
 
-Giao diện có ba tab riêng. Mỗi tab chỉ hiển thị tài khoản, quota và công tắc tự động chọn của agent đó. Công tắc được lưu tại `agent-selection.json` trong thư mục dữ liệu của dịch vụ. Khi nâng cấp, Antigravity giữ chế độ tự động cũ; Codex và Claude mặc định tắt để bạn nhập và chọn tài khoản trước.
+Bảng điều khiển cung cấp các mục riêng cho từng agent được hỗ trợ:
 
-### Thêm và chuyển tài khoản
+- **Antigravity**: Đăng nhập trực tiếp qua Google OAuth hoặc nhập thông tin xác thực để quản lý hạn ngạch các mô hình Gemini và Claude.
+- **Codex**: Đăng nhập qua trình duyệt hoặc nhập tệp phiên làm việc cục bộ để theo dõi giới hạn lượt dùng.
+- **Claude**: Nhập phiên làm việc hiện tại của Claude Code để theo dõi mức sử dụng và chuyển đổi tài khoản.
 
-- **Antigravity:** Tiếp tục đăng nhập Google hoặc nhập token trong tab Antigravity.
-- **Codex:** Mở tab Codex, chọn **Thêm tài khoản**:
-  - *Đăng nhập ChatGPT / Codex (khuyên dùng)*: Tự động mở liên kết đăng nhập trong trình duyệt (OpenAI OAuth) để bạn chọn tài khoản và cấp quyền; tài khoản sẽ tự động lưu và làm mới quota ngay khi hoàn tất.
-  - *Nhập phiên từ tệp / máy*: Nhập phiên hiện tại từ `~/.codex/auth.json` hoặc chọn tệp `auth.json` trên máy. Dịch vụ sử dụng `CODEX_HOME`, mặc định `~/.codex`. Chuyển tài khoản bằng tệp yêu cầu `cli_auth_credentials_store = "file"`; các chế độ `keyring`, `auto` và `ephemeral` được từ chối nếu cấu hình tường minh. Không tự sửa cấu hình hoặc Keychain của bạn.
-- **Claude:** Đăng nhập bằng `claude auth login`, rồi nhập phiên trong tab Claude tương tự. Tệp đăng nhập là `.credentials.json` trong `CLAUDE_CONFIG_DIR`, mặc định `~/.claude`. Hiện hỗ trợ chuyển bằng tệp trên Linux và Windows; chưa hỗ trợ chuyển Claude qua Keychain trên macOS.
+### Chế độ tự động và thủ công
 
-Lặp lại đăng nhập và nhập phiên cho từng tài khoản. Nhập cùng một phiên sẽ cập nhật mục hiện có, không tạo bản sao. Tên/email dùng để nhận diện trên giao diện; thông tin xác thực nằm trong tệp đăng nhập gốc. Tài khoản có cùng email ở hai agent vẫn được quản lý riêng.
+- **Bật tự động chọn**: Dịch vụ liên tục theo dõi hạn ngạch và tự động kích hoạt tài khoản có mức sử dụng còn lại cao nhất.
+- **Chế độ thủ công**: Bạn có thể bấm chọn bất kỳ tài khoản nào trên giao diện khi muốn chủ động chỉ định tài khoản làm việc.
 
-Tắt công tắc để chọn thủ công. Khi bật, dịch vụ chọn tài khoản có quota còn lại cao nhất trong agent đó, giữ tài khoản hiện tại nếu bằng điểm. Với Codex và Claude, điểm là phần trăm còn lại thấp nhất giữa cửa sổ ngắn và tuần; với Antigravity, dùng quota nhóm mô hình đã chọn và loại tài khoản hết quota tuần. Tài khoản có quota lỗi, chưa biết hoặc cũ quá 10 phút không được tự chọn. Đến giờ reset phải đọc lại quota, không tự coi là 100%.
-
-Sau khi chuyển, mở lại phiên CLI/IDE của agent để nạp đăng nhập mới. Phiên đang chạy có thể giữ token trong bộ nhớ. Biến môi trường chứa API key và cấu hình xác thực do tổ chức quản lý có thể ưu tiên hơn tệp đăng nhập.
-
-### Đọc quota và giới hạn tích hợp
-
-- Codex cần CLI có `account/rateLimits/read` trong `codex app-server`. Dịch vụ khởi chạy một tiến trình đọc quota trong thư mục riêng, không tạo hội thoại hoặc gửi prompt. Mỗi tiến trình có thời gian chờ 25 giây, giới hạn đầu ra và được dọn sau khi đọc. Token được Codex làm mới sẽ được lưu lại. API key có thể nhập/chuyển thủ công nhưng không có quota thuê bao ChatGPT để xếp hạng.
-- Claude đọc endpoint usage OAuth mà Claude Code sử dụng. Endpoint này chưa có cam kết API công khai ổn định; khi lỗi hoặc trả 429, giao diện hiển thị lỗi và ngừng dùng quota đó để tự chọn. Dịch vụ kiểm tra cách nhau ít nhất 5 phút, tôn trọng `Retry-After` trong khoảng 5 phút đến 24 giờ. Phiên Claude hết hạn cần đăng nhập lại bằng Claude Code rồi nhập lại vào danh sách. Chưa tự làm mới refresh token Claude.
-- Antigravity giữ chu kỳ làm mới 30 giây. Codex/Claude kiểm tra mỗi 5 phút theo từng tài khoản, tuần tự và không chạy trùng. Nút làm mới không bỏ qua thời gian chờ để tránh bị giới hạn tần suất.
-- Khi phát hiện phiên gốc chưa được nhận diện trong danh sách, tính năng tự chọn Codex/Claude chờ bạn nhập phiên đó thay vì ghi đè. Xóa tài khoản chỉ xóa khỏi danh sách quản lý, không đăng xuất CLI đang dùng.
-
-Kho tài khoản Codex/Claude nằm tại `native-accounts.json` trong thư mục dữ liệu dịch vụ, được ghi với quyền `0600` trên Unix. Trước khi thay tệp đăng nhập, dịch vụ lưu một bản sao cạnh tệp gốc (`auth.aam.bak` hoặc `.credentials.aam.bak`). API danh sách chỉ trả metadata/quota, không trả token. Các endpoint `/api/agents/*` dùng cùng xác thực quản trị với giao diện hiện có.
-
-Tài liệu đối chiếu ngày 2026-09-09: [Codex authentication](https://developers.openai.com/codex/auth), [Codex app-server](https://developers.openai.com/codex/app-server), [Claude authentication](https://code.claude.com/docs/en/authentication), [báo cáo giới hạn endpoint quota Claude](https://github.com/anthropics/claude-code/issues/30930). Môi trường kiểm tra: Codex CLI 0.153.4, Claude Code 2.1.250. Kiểm thử tự động sử dụng dữ liệu giả, không xác minh quota với tài khoản thuê bao thật.
+Sau khi chuyển đổi tài khoản, các phiên làm việc CLI hoặc IDE của bạn sẽ áp dụng thông tin đăng nhập mới ở lượt chạy kế tiếp hoặc sau khi khởi động lại phiên đó.
 
 ---
 
@@ -159,10 +141,10 @@ Tài liệu đối chiếu ngày 2026-09-09: [Codex authentication](https://deve
 ├── agent-relay/                # Mã nguồn Rust backend và daemon
 │   ├── src/
 │   │   ├── cli.rs              # Trình quản lý dòng lệnh toàn cục (aam)
-│   │   ├── storage/            # Quản lý tài khoản, OS Keyring và IDE SQLite
-│   │   ├── proxy/              # Server Axum, quản lý token, tra cứu quota và UI
-│   │   ├── oauth/              # Luồng đăng nhập OAuth an toàn
-│   │   └── device/             # Định danh phần cứng độc lập
+│   │   ├── storage/            # Quản lý lưu trữ tài khoản và đồng bộ đăng nhập
+│   │   ├── proxy/              # Máy chủ cục bộ, điều phối hạn ngạch và giao diện web
+│   │   ├── oauth/              # Luồng xác thực đăng nhập OAuth
+│   │   └── device/             # Định danh thiết bị
 │   ├── Cargo.lock
 │   └── Cargo.toml
 ├── install.sh                  # Kịch bản cài đặt và quản lý vòng đời trên Linux / macOS

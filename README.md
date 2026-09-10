@@ -9,26 +9,26 @@
 
 [English](README.md) | [Tiếng Việt](README_VI.md)
 
-An intelligent multi-account manager and quota coordinator designed for AI coding agents, including **Antigravity CLI (`agy`)**, **Antigravity IDE**, **Claude Code**, **Cursor**, and the broader AI coding ecosystem.
+An intelligent multi-account manager and quota coordinator for AI coding agents, including **Antigravity**, **Claude Code**, and **Codex**.
 
 ---
 
 ## Key features
 
-- **Multi-agent ready**: Extensible architecture designed to manage accounts, refresh tokens, and coordinate quotas across multiple coding agents instead of relying on a single tool.
-- **Sub-2ms 1-click account switching**: Automatically syncs credentials to OS Keyring (GNOME Keyring / Linux Secret Service) and Antigravity IDE SQLite storage (`state.vscdb`) in less than 2ms.
-- **Zero environment pollution**: Runs 100% standalone without injecting environment variables or modifying shell configuration files (`.bashrc`, `.zshrc`), maintaining direct full-speed connections to model providers.
-- **Real-time quota monitoring**: Tracks 5-hour and weekly rate limits across model families (Gemini, Claude, GPT) with precise reset countdowns.
-- **Smart account auto-selection**: Dynamically evaluates and activates the account with the highest available quota whenever an agent performs a task.
-- **Minimalist web dashboard**: Clean, distraction-free dark mode interface hosted locally at `http://127.0.0.1:8045`.
+- **Multi-agent support**: Manage multiple accounts and quotas for Antigravity, Claude Code, and Codex in one unified place.
+- **One-click account switching**: Switch active accounts instantly from the dashboard without manual credential copying.
+- **Smart quota auto-selection**: Automatically detect and switch to the account with the highest remaining quota when limits are approached.
+- **Real-time quota monitoring**: Keep track of remaining requests, rate limits, and reset schedules across accounts.
+- **Zero environment pollution**: Runs cleanly in the background without modifying shell profiles (`.bashrc`, `.zshrc`) or creating invasive aliases.
+- **Local web dashboard**: Clean, responsive dark-mode interface hosted locally at `http://127.0.0.1:8045`.
 
 ---
 
 ## Installation and usage
 
-### 1. One-line quick install (no clone required)
+### 1. One-line quick install
 
-Similar to tools like `rustup` or `claude code`, you can install and launch the service immediately on any machine:
+Install and launch the service immediately with a single command:
 
 - **Linux / macOS:**
   ```bash
@@ -42,7 +42,7 @@ Similar to tools like `rustup` or `claude code`, you can install and launch the 
   ```
   *(Alternatively, run `.\install.ps1` directly if cloned).*
 
-This command downloads the appropriate pre-compiled binary, verifies its SHA256 checksum, completes installation, starts the service, and launches the dashboard. No master key entry is required during initial setup. Afterward, run `aam` at any time to open the dashboard with a secure session.
+The script automatically downloads the release binary for your platform, verifies integrity via SHA-256 checksum, installs the `aam` command, starts the background service, and opens the web dashboard.
 
 ### 2. Service commands (`aam`)
 
@@ -55,14 +55,14 @@ This command downloads the appropriate pre-compiled binary, verifies its SHA256 
   ```bash
   aam autostart
   ```
-  *The service starts automatically in the background on system boot, with auto-recovery that restarts the daemon within 3 seconds if stopped unexpectedly. To disable, run `aam stop` or `aam disable`.*
+  *Starts the service in the background on system boot and auto-recovers if stopped. To disable, run `aam disable`.*
 
 - **Start service:**
   ```bash
   aam start
   ```
 
-- **Check service status:**
+- **Check status:**
   ```bash
   aam status
   ```
@@ -72,17 +72,17 @@ This command downloads the appropriate pre-compiled binary, verifies its SHA256 
   aam stop
   ```
 
-- **Update to latest version:**
-  ```bash
-  aam update
-  ```
-
 - **Restart service:**
   ```bash
   aam restart
   ```
 
-- **Reinstall:**
+- **Update to latest version:**
+  ```bash
+  aam update
+  ```
+
+- **Reinstall binary:**
   ```bash
   aam reinstall
   ```
@@ -98,7 +98,7 @@ This command downloads the appropriate pre-compiled binary, verifies its SHA256 
 
 ### 3. Quick uninstallation scripts
 
-If you wish to uninstall directly without using the CLI command:
+If you prefer to uninstall without using the CLI command:
 
 - **Linux / macOS:**
   ```bash
@@ -114,39 +114,24 @@ If you wish to uninstall directly without using the CLI command:
   .\uninstall.ps1 -Purge
   ```
 
-Access the local web dashboard at: [http://127.0.0.1:8045](http://127.0.0.1:8045)
-
-### 4. Transparent synchronization without shell aliases
-
-While `aam` is running, the background daemon periodically scans available quotas and syncs the optimal credentials into your OS Keyring and agent configuration. You can use your coding agents normally **without defining shell aliases or writing complex wrapper scripts**.
+Local web dashboard URL: [http://127.0.0.1:8045](http://127.0.0.1:8045)
 
 ---
 
-## Managing Antigravity, Codex, and Claude
+## Managing accounts
 
-The web dashboard provides dedicated tabs for each agent. Each tab displays accounts, remaining quotas, and an automatic selection toggle. Toggle states are persisted in `agent-selection.json` within the service data directory. Upon upgrading, Antigravity retains its auto-selection setting, while Codex and Claude default to manual mode so you can import and review accounts first.
+The web dashboard provides dedicated sections for each supported agent:
 
-### Adding and switching accounts
+- **Antigravity**: Sign in via Google OAuth or paste authorization credentials directly to manage Gemini and Claude model quotas.
+- **Codex**: Sign in via browser OAuth or import an active local session file to monitor rate limits.
+- **Claude**: Import your active Claude Code session to track usage and switch accounts.
 
-- **Antigravity:** Sign in with Google OAuth or enter credentials directly in the Antigravity tab.
-- **Codex:** Open the Codex tab and select **Add account**:
-  - *Sign in via ChatGPT / Codex (recommended)*: Opens an OpenAI OAuth authorization link in your default browser. Once granted, credentials and quotas are saved and refreshed automatically.
-  - *Import session from file/machine*: Reads existing credentials from `~/.codex/auth.json` or a chosen file. Respects `CODEX_HOME` (defaults to `~/.codex`). File-based switching requires `cli_auth_credentials_store = "file"`. Explicit `keyring`, `auto`, or `ephemeral` modes are rejected to avoid modifying system keychains unexpectedly.
-- **Claude:** Authenticate using `claude auth login`, then import the session in the Claude tab. Reads `.credentials.json` from `CLAUDE_CONFIG_DIR` (defaults to `~/.claude`). File switching is currently supported on Linux and Windows.
+### Auto-selection vs. manual selection
 
-Importing an existing session updates the entry in place without creating duplicates. Account names and emails serve display purposes only; active credentials remain stored securely. Accounts sharing an email across different agents are managed independently.
+- **Auto-selection enabled**: The service continuously tracks quota levels and automatically activates the account with the most available capacity.
+- **Manual mode**: Select any account manually from the dashboard whenever you want full control over which account is active.
 
-When auto-selection is enabled, the service selects the account with the highest available quota, keeping the active account in case of a tie. For Codex and Claude, scoring is based on the lowest percentage between short-term and weekly windows; for Antigravity, the selected model group quota is used. Stale (older than 10 minutes), unknown, or errored quotas are excluded from auto-selection.
-
-After switching accounts, restart existing CLI or IDE sessions if they maintain credentials in memory.
-
-### Quota monitoring and integration details
-
-- **Codex**: Reads quotas through `account/rateLimits/read` via `codex app-server`. Each check runs in an isolated directory with a 25-second timeout, without creating conversations or dispatching prompts. Refreshed access tokens are saved automatically.
-- **Claude**: Inspects OAuth usage endpoints utilized by Claude Code. The service enforces rate limiting with a minimum 5-minute polling interval and respects `Retry-After` headers up to 24 hours. Expired sessions require re-authentication through Claude Code before re-importing.
-- **Antigravity**: Retains a 30-second refresh cycle. Codex and Claude checks run sequentially every 5 minutes per account without concurrent overlap.
-
-Account data is stored at `native-accounts.json` with strict `0600` permissions on Unix. Before replacing session files, backup copies are created (`auth.aam.bak` or `.credentials.aam.bak`). The list API exposes only quota metadata and identifiers, never secrets or raw tokens.
+After switching an account, existing CLI or IDE sessions pick up the active credentials on their next command or when restarted.
 
 ---
 
@@ -156,10 +141,10 @@ Account data is stored at `native-accounts.json` with strict `0600` permissions 
 ├── agent-relay/                # Rust backend daemon source code
 │   ├── src/
 │   │   ├── cli.rs              # Global CLI command manager (aam)
-│   │   ├── storage/            # Account storage, OS Keyring, and IDE SQLite sync
-│   │   ├── proxy/              # Axum HTTP server, token management, quota router, UI
-│   │   ├── oauth/              # Secure OAuth authorization flows
-│   │   └── device/             # Hardware fingerprinting
+│   │   ├── storage/            # Local account storage and credential synchronization
+│   │   ├── proxy/              # Local server, quota coordination, and web dashboard
+│   │   ├── oauth/              # OAuth authorization flows
+│   │   └── device/             # Device identification
 │   ├── Cargo.lock
 │   └── Cargo.toml
 ├── install.sh                  # Linux / macOS installation & lifecycle script
