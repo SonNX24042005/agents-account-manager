@@ -28,17 +28,28 @@ An intelligent multi-account manager and quota coordinator designed for AI codin
 
 ### 1. One-line quick install (no clone required)
 
-Similar to tools like `rustup` or `claude code`, you can install and launch the service immediately on any machine with a single curl command:
+Similar to tools like `rustup` or `claude code`, you can install and launch the service immediately on any machine:
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/install.sh | bash
-```
+- **Linux / macOS:**
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/install.sh | bash
+  ```
+  *(Alternatively, run `./install.sh` directly if you have already cloned the repository).*
 
-*(Alternatively, run `./install.sh` directly if you have already cloned the repository).*
+- **Windows (PowerShell):**
+  ```powershell
+  irm https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/install.ps1 | iex
+  ```
+  *(Alternatively, run `.\install.ps1` directly if cloned).*
 
 This command downloads the appropriate pre-compiled binary, verifies its SHA256 checksum, completes installation, starts the service, and launches the dashboard. No master key entry is required during initial setup. Afterward, run `aam` at any time to open the dashboard with a secure session.
 
 ### 2. Service commands (`aam`)
+
+- **Open dashboard (default):**
+  ```bash
+  aam
+  ```
 
 - **Auto-start on boot (recommended):**
   ```bash
@@ -71,9 +82,41 @@ This command downloads the appropriate pre-compiled binary, verifies its SHA256 
   aam restart
   ```
 
+- **Reinstall:**
+  ```bash
+  aam reinstall
+  ```
+
+- **Uninstall:**
+  ```bash
+  # Uninstall binary and service, keeping user data and accounts:
+  aam uninstall
+
+  # Uninstall and purge all configuration and accounts:
+  aam uninstall --purge
+  ```
+
+### 3. Quick uninstallation scripts
+
+If you wish to uninstall directly without using the CLI command:
+
+- **Linux / macOS:**
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/uninstall.sh | bash
+  # Or purge all account data:
+  curl -fsSL https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/uninstall.sh | bash -s -- --purge
+  ```
+
+- **Windows (PowerShell):**
+  ```powershell
+  irm https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/uninstall.ps1 | iex
+  # Or purge all account data:
+  .\uninstall.ps1 -Purge
+  ```
+
 Access the local web dashboard at: [http://127.0.0.1:8045](http://127.0.0.1:8045)
 
-### 3. Transparent synchronization without shell aliases
+### 4. Transparent synchronization without shell aliases
 
 While `aam` is running, the background daemon periodically scans available quotas and syncs the optimal credentials into your OS Keyring and agent configuration. You can use your coding agents normally **without defining shell aliases or writing complex wrapper scripts**.
 
@@ -119,7 +162,10 @@ Account data is stored at `native-accounts.json` with strict `0600` permissions 
 │   │   └── device/             # Hardware fingerprinting
 │   ├── Cargo.lock
 │   └── Cargo.toml
-├── install.sh                  # One-line installation script
+├── install.sh                  # Linux / macOS installation & lifecycle script
+├── uninstall.sh                # Linux / macOS uninstallation script
+├── install.ps1                 # Windows PowerShell installation & lifecycle script
+├── uninstall.ps1               # Windows PowerShell uninstallation script
 ├── LICENSE                     # MIT License
 ├── README.md                   # English documentation
 └── README_VI.md                # Vietnamese documentation

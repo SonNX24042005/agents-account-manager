@@ -28,17 +28,28 @@ Hệ thống quản trị đa tài khoản và điều phối hạn ngạch thô
 
 ### 1. Cài đặt nhanh 1 dòng lệnh (không cần clone repo)
 
-Tương tự như `claude code` hay `rustup`, bạn có thể cài đặt ngay lập tức ở bất kỳ máy nào bằng 1 lệnh curl:
+Tương tự như `claude code` hay `rustup`, bạn có thể cài đặt ngay lập tức ở bất kỳ máy nào:
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/install.sh | bash
-```
+- **Linux / macOS:**
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/install.sh | bash
+  ```
+  *(Hoặc nếu đã tải mã nguồn về máy, bạn có thể chạy trực tiếp `./install.sh`)*
 
-*(Hoặc nếu đã tải mã nguồn về máy, bạn có thể chạy trực tiếp `./install.sh`)*
+- **Windows (PowerShell):**
+  ```powershell
+  irm https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/install.ps1 | iex
+  ```
+  *(Hoặc chạy `.\install.ps1` nếu đã tải mã nguồn).*
 
-Lệnh này tự động tải, xác minh checksum, cài đặt, khởi động dịch vụ và mở bảng điều khiển. Người dùng không phải nhập master key. Những lần sau chỉ cần chạy lệnh `aam` để mở lại bảng điều khiển với một phiên đăng nhập an toàn mới.
+Lệnh này tự động tải bản phát hành phù hợp, xác minh checksum SHA-256, cài đặt tệp thực thi, khởi động dịch vụ và mở bảng điều khiển. Người dùng không phải cấu hình thủ công master key. Những lần sau chỉ cần chạy lệnh `aam` để mở lại bảng điều khiển với một phiên an toàn mới.
 
-### 2. Các tùy chọn khởi chạy (`aam`)
+### 2. Các tùy chọn lệnh (`aam`)
+
+- **Mở bảng điều khiển (mặc định):**
+  ```bash
+  aam
+  ```
 
 - **Tự động chạy liên tục cùng hệ thống (khuyên dùng - auto-start on boot):**
   ```bash
@@ -46,7 +57,7 @@ Lệnh này tự động tải, xác minh checksum, cài đặt, khởi động 
   ```
   *Dịch vụ sẽ tự khởi động ngầm mỗi khi mở máy, tự động hồi phục và bật lại sau 3 giây nếu bị tắt. Muốn dừng hoàn toàn chỉ cần gõ `aam stop` hoặc `aam disable`.*
 
-- **Chạy nền thông thường:**
+- **Khởi chạy dịch vụ chạy ngầm:**
   ```bash
   aam start
   ```
@@ -71,9 +82,41 @@ Lệnh này tự động tải, xác minh checksum, cài đặt, khởi động 
   aam restart
   ```
 
+- **Cài đặt lại:**
+  ```bash
+  aam reinstall
+  ```
+
+- **Gỡ cài đặt:**
+  ```bash
+  # Gỡ bỏ binary và dịch vụ, giữ lại dữ liệu cấu hình và tài khoản:
+  aam uninstall
+
+  # Gỡ bỏ hoàn toàn và xóa sạch dữ liệu tài khoản:
+  aam uninstall --purge
+  ```
+
+### 3. Kịch bản gỡ cài đặt nhanh
+
+Nếu bạn muốn gỡ cài đặt trực tiếp mà không dùng lệnh CLI:
+
+- **Linux / macOS:**
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/uninstall.sh | bash
+  # Hoặc xóa sạch dữ liệu cấu hình:
+  curl -fsSL https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/uninstall.sh | bash -s -- --purge
+  ```
+
+- **Windows (PowerShell):**
+  ```powershell
+  irm https://raw.githubusercontent.com/SonNX24042005/agents-account-manager/main/uninstall.ps1 | iex
+  # Hoặc xóa sạch dữ liệu cấu hình:
+  .\uninstall.ps1 -Purge
+  ```
+
 Truy cập bảng điều khiển web tại: [http://127.0.0.1:8045](http://127.0.0.1:8045)
 
-### 3. Tự động đồng bộ không cần alias
+### 4. Tự động đồng bộ không cần alias
 
 Khi dịch vụ `aam` đang chạy, hệ thống sẽ tự động quét hạn ngạch ngầm và duy trì tài khoản tối ưu nhất vào OS Keyring và cấu hình agent. Bạn chỉ cần sử dụng các công cụ agent bình thường mà **không cần tạo bất kỳ alias hay cấu hình shell phức tạp nào**.
 
@@ -122,7 +165,10 @@ Tài liệu đối chiếu ngày 2026-09-09: [Codex authentication](https://deve
 │   │   └── device/             # Định danh phần cứng độc lập
 │   ├── Cargo.lock
 │   └── Cargo.toml
-├── install.sh                  # Kịch bản cài đặt 1 dòng lệnh qua curl
+├── install.sh                  # Kịch bản cài đặt và quản lý vòng đời trên Linux / macOS
+├── uninstall.sh                # Kịch bản gỡ cài đặt độc lập trên Linux / macOS
+├── install.ps1                 # Kịch bản cài đặt và quản lý vòng đời trên Windows PowerShell
+├── uninstall.ps1               # Kịch bản gỡ cài đặt độc lập trên Windows PowerShell
 ├── LICENSE                     # Giấy phép MIT
 ├── README.md                   # Tài liệu tiếng Anh
 └── README_VI.md                # Tài liệu tiếng Việt

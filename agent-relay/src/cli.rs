@@ -25,6 +25,22 @@ impl Cli {
             "enable" | "autostart" => Some(Self::enable_autostart()),
             "disable" => Some(Self::disable_autostart()),
             "install" => Some(Self::install_binary()),
+            "reinstall" => Some(Self::reinstall()),
+            "uninstall" | "remove" => {
+                if args.iter().skip(2).any(|arg| arg == "--help" || arg == "-h") {
+                    println!("Cách sử dụng: aam uninstall [tùy chọn]");
+                    println!();
+                    println!("Tùy chọn:");
+                    println!("  --purge, -p       Xóa toàn bộ thư mục dữ liệu cấu hình và tài khoản");
+                    println!("  --keep-data       Giữ lại thư mục dữ liệu cấu hình mà không cần hỏi lại");
+                    println!("  --help, -h        Xem hướng dẫn lệnh gỡ cài đặt");
+                    Some(Ok(()))
+                } else {
+                    let purge = args.iter().skip(2).any(|arg| arg == "--purge" || arg == "-p");
+                    let keep_data = args.iter().skip(2).any(|arg| arg == "--keep-data" || arg == "--no-purge");
+                    Some(Self::uninstall(purge, keep_data))
+                }
+            }
             "update" | "upgrade" => Some(Self::update_binary()),
             "version" | "-v" | "--version" => {
                 println!("aam v1.0.3 (Agent Account Manager)");
@@ -604,11 +620,159 @@ impl Cli {
             let _ = symlink(&target_bin, &symlink_path);
         }
 
+        #[cfg(target_os = "windows")]
+        if let Some(parent) = target_bin.parent() {
+            let aam_exe = parent.join("aam.exe");
+            if aam_exe != current_exe {
+                let _ = fs::copy(&target_bin, &aam_exe);
+            }
+        }
+
         println!(
             "[aam] Đã cài đặt lệnh 'aam' và 'agent-relay' vào {:?}",
             target_bin
         );
         println!("       Bạn có thể dùng lệnh 'aam' ở bất kỳ đâu trong terminal.");
+        Ok(())
+    }
+
+    fn reinstall() -> Result<()> {
+        println!("=====================================================");
+        println!("   Cài đặt lại Agent Relay Manager (aam)");
+        println!("=====================================================");
+        let port = crate::config::Config::default().port;
+        let was_running = Self::is_relay_service_running(port);
+        let was_sysd_enabled = Self::is_systemd_service_enabled();
+
+        if was_running {
+            let _ = Self::stop_service();
+        }
+
+        Self::install_binary()?;
+
+        if was_sysd_enabled {
+            println!("[aam] Đang cập nhật lại dịch vụ tự khởi động...");
+            Self::enable_autostart()?;
+        } else if was_running {
+            println!("[aam] Đang khởi động lại dịch vụ...");
+            Self::start_service()?;
+        }
+
+        println!("Cài đặt lại hoàn tất!");
+        Ok(())
+    }
+
+    fn uninstall(mut purge: bool, keep_data: bool) -> Result<()> {
+        use std::io::IsTerminal;
+
+        println!("=====================================================");
+        println!("   Gỡ cài đặt Agent Relay Manager (aam)");
+        println!("=====================================================");
+
+        let config = crate::config::Config::default();
+        let data_dir = config.data_dir;
+        let legacy_dir = dirs::home_dir().map(|h| h.join(".antigravity-relay"));
+
+        if !purge && !keep_data && std::io::stdin().is_terminal() {
+            print!(
+                "Bạn có muốn xóa toàn bộ dữ liệu cấu hình và tài khoản (tại {}) không? [y/N]: ",
+                data_dir.display()
+            );
+            let _ = std::io::stdout().flush();
+            let mut input = String::new();
+            if std::io::stdin().read_line(&mut input).is_ok() {
+                let trimmed = input.trim().to_lowercase();
+                if trimmed == "y" || trimmed == "yes" {
+                    purge = true;
+                }
+            }
+        }
+
+        // 1. Dừng dịch vụ nếu đang hoạt động
+        println!("[aam] Đang dừng dịch vụ nếu đang hoạt động...");
+        let _ = Self::stop_service();
+
+        // 2. Tắt chế độ tự khởi động cùng hệ thống
+        #[cfg(target_os = "linux")]
+        {
+            println!("[aam] Đang tắt và xóa dịch vụ khởi động systemd...");
+            let _ = Self::disable_autostart();
+        }
+
+        // 3. Xóa các tệp thực thi và liên kết
+        let target_bin = Self::get_installed_bin_path();
+        if target_bin.exists() {
+            if let Err(e) = fs::remove_file(&target_bin) {
+                eprintln!("[cảnh báo] Không thể xóa {}: {}", target_bin.display(), e);
+            } else {
+                println!("[aam] Đã xóa tệp thực thi: {}", target_bin.display());
+            }
+        }
+
+        if let Some(parent) = target_bin.parent() {
+            #[cfg(unix)]
+            {
+                let symlink_path = parent.join("aam");
+                if symlink_path.exists() || fs::symlink_metadata(&symlink_path).is_ok() {
+                    let _ = fs::remove_file(&symlink_path);
+                    println!("[aam] Đã xóa liên kết: {}", symlink_path.display());
+                }
+                let legacy_symlink = parent.join("agyr");
+                if legacy_symlink.exists() || fs::symlink_metadata(&legacy_symlink).is_ok() {
+                    let _ = fs::remove_file(&legacy_symlink);
+                }
+                let legacy_bin = parent.join("antigravity-relay");
+                if legacy_bin.exists() {
+                    let _ = fs::remove_file(&legacy_bin);
+                }
+            }
+            #[cfg(target_os = "windows")]
+            {
+                let aam_exe = parent.join("aam.exe");
+                if aam_exe.exists() {
+                    let _ = fs::remove_file(&aam_exe);
+                    println!("[aam] Đã xóa tệp thực thi: {}", aam_exe.display());
+                }
+                let legacy_exe = parent.join("antigravity-relay.exe");
+                if legacy_exe.exists() {
+                    let _ = fs::remove_file(&legacy_exe);
+                }
+            }
+        }
+
+        // 4. Xóa dữ liệu cấu hình nếu được yêu cầu
+        if purge {
+            if data_dir.exists() {
+                if let Err(e) = fs::remove_dir_all(&data_dir) {
+                    eprintln!(
+                        "[cảnh báo] Không thể xóa thư mục dữ liệu {}: {}",
+                        data_dir.display(),
+                        e
+                    );
+                } else {
+                    println!(
+                        "[aam] Đã xóa toàn bộ thư mục dữ liệu cấu hình tại: {}",
+                        data_dir.display()
+                    );
+                }
+            }
+            if let Some(ref leg) = legacy_dir {
+                if leg.exists() {
+                    let _ = fs::remove_dir_all(leg);
+                }
+            }
+        } else if data_dir.exists() {
+            println!(
+                "[aam] Đã giữ lại thư mục cấu hình và dữ liệu tài khoản tại: {}",
+                data_dir.display()
+            );
+            println!(
+                "       (Để xóa sạch hoàn toàn, bạn có thể xóa thủ công thư mục trên hoặc dùng lệnh 'aam uninstall --purge')"
+            );
+        }
+
+        println!("=====================================================");
+        println!("Gỡ cài đặt hoàn tất!");
         Ok(())
     }
 
@@ -835,17 +999,23 @@ impl Cli {
         println!("Agent Account Manager CLI (aam)");
         println!();
         println!("Cách sử dụng:");
-        println!("  aam              Tự động bật dịch vụ (nếu chưa chạy) và mở giao diện web");
-        println!("  aam update       Cập nhật aam lên phiên bản mới nhất từ GitHub");
-        println!("  aam start        Khởi chạy dịch vụ chạy ngầm");
-        println!("  aam autostart    Bật tự động chạy liên tục cùng hệ thống (kể cả restart máy)");
-        println!("  aam stop         Dừng dịch vụ đang chạy");
-        println!("  aam restart      Khởi động lại dịch vụ");
-        println!("  aam status       Xem trạng thái hoạt động của dịch vụ");
-        println!("  aam version      Xem phiên bản hiện tại");
-        println!("  aam disable      Tắt chế độ tự khởi động cùng máy");
-        println!("  aam install      Cài đặt lệnh aam vào ~/.local/bin");
-        println!("  aam run          Chạy trực tiếp trên terminal hiện tại (foreground)");
+        println!("  aam                    Tự động bật dịch vụ (nếu chưa chạy) và mở giao diện web");
+        println!("  aam update             Cập nhật aam lên phiên bản mới nhất từ GitHub");
+        println!("  aam start              Khởi chạy dịch vụ chạy ngầm");
+        println!("  aam autostart          Bật tự động chạy liên tục cùng hệ thống (kể cả restart máy)");
+        println!("  aam stop               Dừng dịch vụ đang chạy");
+        println!("  aam restart            Khởi động lại dịch vụ");
+        println!("  aam status             Xem trạng thái hoạt động của dịch vụ");
+        println!("  aam version            Xem phiên bản hiện tại");
+        println!("  aam disable            Tắt chế độ tự khởi động cùng máy");
+        println!("  aam install            Cài đặt lệnh aam vào ~/.local/bin");
+        println!("  aam reinstall          Cài đặt lại binary và thiết lập liên kết lệnh");
+        println!("  aam uninstall [tùy_chọn]  Gỡ cài đặt aam khỏi hệ thống");
+        println!("  aam run                Chạy trực tiếp trên terminal hiện tại (foreground)");
+        println!();
+        println!("Tùy chọn gỡ cài đặt (aam uninstall):");
+        println!("  --purge, -p            Xóa toàn bộ thư mục dữ liệu cấu hình và tài khoản");
+        println!("  --keep-data            Giữ lại thư mục dữ liệu cấu hình mà không cần hỏi lại");
         println!();
     }
 }
@@ -882,5 +1052,20 @@ mod tests {
         assert!(
             Cli::parse_browser_bootstrap_response("HTTP/1.1 401 Unauthorized\r\n\r\n").is_err()
         );
+    }
+
+    #[test]
+    fn parses_uninstall_flags_correctly() {
+        let purge_args = vec!["aam".to_string(), "uninstall".to_string(), "--purge".to_string()];
+        let is_purge = purge_args.iter().skip(2).any(|arg| arg == "--purge" || arg == "-p");
+        assert!(is_purge);
+
+        let short_purge_args = vec!["aam".to_string(), "uninstall".to_string(), "-p".to_string()];
+        let is_short_purge = short_purge_args.iter().skip(2).any(|arg| arg == "--purge" || arg == "-p");
+        assert!(is_short_purge);
+
+        let keep_args = vec!["aam".to_string(), "uninstall".to_string(), "--keep-data".to_string()];
+        let is_keep = keep_args.iter().skip(2).any(|arg| arg == "--keep-data" || arg == "--no-purge");
+        assert!(is_keep);
     }
 }
