@@ -1217,6 +1217,11 @@ pub fn get_admin_ui_html() -> &'static str {
 
       container.innerHTML = accounts.map(acc => {
         const isActive = acc.is_active;
+        const nativeQuotaUnavailable = selectedAgent !== 'antigravity' && (acc.quota_stale || acc.quota_percentage == null);
+        const quotaStatusLabel = selectedAgent !== 'antigravity' && ({
+          ready: 'Sẵn sàng', exhausted: 'Hết hạn ngạch', stale: 'Chờ quota mới',
+          unknown: 'Chưa có quota', error: 'Lỗi đọc quota'
+        })[acc.quota_status];
         const safeEmail = escapeHtml(acc.email);
         const safeId = escapeHtml(acc.id);
         const safeInitials = escapeHtml(acc.email.substring(0, 2).toUpperCase());
@@ -1251,7 +1256,7 @@ pub fn get_admin_ui_html() -> &'static str {
                         </span>`
                       : `<span class="inline-flex items-center gap-1.5 text-[10px] font-medium text-zinc-400 px-1 py-0.5">
                           <span class="w-1.5 h-1.5 rounded-full bg-zinc-600"></span>
-                          Sẵn sàng
+                          ${quotaStatusLabel || (nativeQuotaUnavailable ? 'Cần kiểm tra quota' : 'Sẵn sàng')}
                         </span>`
                   }
                   <button data-account-id="${safeId}" data-account-email="${safeEmail}" title="Xóa tài khoản" class="delete-account-btn p-1.5 hover:bg-zinc-800 text-zinc-500 hover:text-red-400 rounded-md transition flex items-center justify-center cursor-pointer">
@@ -1261,6 +1266,7 @@ pub fn get_admin_ui_html() -> &'static str {
               </div>
 
               ${acc.error ? `<p class="text-xs text-zinc-400">${escapeHtml(acc.error)}</p>` : ''}
+              ${acc.quota_message ? `<p class="text-xs text-zinc-400">${escapeHtml(acc.quota_message)}</p>` : ''}
               ${acc.checked_at ? `<p class="text-[10px] text-zinc-500">Cập nhật: ${escapeHtml(new Date(acc.checked_at).toLocaleString('vi-VN'))}</p>` : ''}
               <!-- Quota breakdown -->
               <div class="space-y-2.5 mt-3 pt-3 border-t border-zinc-800/60">
@@ -1275,12 +1281,13 @@ pub fn get_admin_ui_html() -> &'static str {
                           ? Math.max(0, Math.min(100, Math.round(b.remaining_percentage)))
                           : 0;
                         const resetInfo = getResetDisplay(b.reset_time, b.window);
+                        const stale = resetInfo.isExpired || (selectedAgent !== 'antigravity' && acc.quota_stale);
 
                         const winUpper = String(b.window || '').toUpperCase();
                         const isWeekly = winUpper.includes('WEEK') || winUpper.includes('7D') || winUpper.includes('SEVEN');
                         const is5h = winUpper.includes('5H') || winUpper.includes('FIVE');
                         const winTitle = is5h ? 'Hạn ngạch 5 giờ' : (isWeekly ? 'Hạn ngạch tuần' : escapeHtml(b.window));
-                        const isExhausted = pct === 0;
+                        const isExhausted = pct === 0 && !stale;
                         const isLow = pct < 20;
                         return `
                         <div>
@@ -1288,7 +1295,7 @@ pub fn get_admin_ui_html() -> &'static str {
                             <span class="${isWeekly && isExhausted ? 'text-red-400 font-medium' : ''}">
                               ${winTitle}${isWeekly && isExhausted ? ' (Hết hạn ngạch tuần)' : ''}
                             </span>
-                            <span class="font-mono ${isExhausted ? 'text-red-400' : (isLow ? 'text-amber-400' : 'text-blue-400')} font-medium">${pct}%</span>
+                            <span class="font-mono ${stale ? 'text-zinc-500' : (isExhausted ? 'text-red-400' : (isLow ? 'text-amber-400' : 'text-blue-400'))} font-medium">${pct}%${stale ? ' (cũ)' : ''}</span>
                           </div>
                           <progress class="quota-progress ${isExhausted ? 'exhausted' : (isLow ? 'low' : '')}" max="100" value="${pct}">${pct}%</progress>
                           ${resetInfo.text ? `
@@ -1388,7 +1395,7 @@ pub fn get_admin_ui_html() -> &'static str {
 
         if (diffMs <= 0) {
           return {
-            text: is5h ? 'Đã hồi phục (100% - chu kỳ 5h)' : (isWeekly ? 'Đã hồi phục (100% - chu kỳ tuần)' : 'Đã hồi phục (100%)'),
+            text: 'Đã đến giờ đặt lại · chờ quota mới',
             isExpired: true
           };
         }

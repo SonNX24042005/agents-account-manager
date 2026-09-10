@@ -20,6 +20,18 @@ use tokio::{
 
 const MAX_JSON: usize = 256 * 1024;
 const FRESH_SECONDS: i64 = 600;
+const QUOTA_POLL_SECONDS: i64 = 300;
+const RESET_RETRY_SECONDS: i64 = 30;
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum QuotaStatus {
+    Ready,
+    Exhausted,
+    Stale,
+    Unknown,
+    Error,
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 struct NativeAccount {
@@ -38,12 +50,114 @@ struct NativeAccount {
 }
 
 impl NativeAccount {
-    fn score(&self) -> Option<f64> {
-        if self.error.is_some()
-            || self
-                .checked_at
-                .is_none_or(|t| !(0..FRESH_SECONDS).contains(&(Utc::now() - t).num_seconds()))
+    fn quota_status(&self, now: DateTime<Utc>) -> QuotaStatus {
+        if self.error.is_some() {
+            return QuotaStatus::Error;
+        }
+        if self.checked_at.is_none() || self.quota_groups.iter().all(|g| g.buckets.is_empty()) {
+            return QuotaStatus::Unknown;
+        }
+        if !self.quota_is_fresh(now)
+            || (self.agent == Agent::Claude
+                && self.credentials["claudeAiOauth"]["expiresAt"]
+                    .as_i64()
+                    .is_none_or(|t| t <= now.timestamp_millis()))
         {
+            return QuotaStatus::Stale;
+        }
+        if self
+            .quota_groups
+            .iter()
+            .flat_map(|g| &g.buckets)
+            .any(|b| b.remaining_percentage <= 0.0)
+        {
+            return QuotaStatus::Exhausted;
+        }
+        QuotaStatus::Ready
+    }
+
+    fn quota_message(&self, status: QuotaStatus) -> Option<String> {
+        match status {
+            QuotaStatus::Ready | QuotaStatus::Error => None,
+            QuotaStatus::Unknown => {
+                Some("Chưa có dữ liệu quota; đang chờ lần đọc thành công".into())
+            }
+            QuotaStatus::Stale => {
+                Some("Quota đã cũ hoặc đến giờ đặt lại; đang chờ dữ liệu mới".into())
+            }
+            QuotaStatus::Exhausted => {
+                let mut windows = Vec::new();
+                for bucket in self
+                    .quota_groups
+                    .iter()
+                    .flat_map(|g| &g.buckets)
+                    .filter(|b| b.remaining_percentage <= 0.0)
+                {
+                    let label = if bucket.is_5h() {
+                        "5 giờ"
+                    } else if bucket.is_weekly() {
+                        "tuần"
+                    } else {
+                        &bucket.window
+                    };
+                    if !windows.contains(&label) {
+                        windows.push(label);
+                    }
+                }
+                Some(format!(
+                    "Đã hết hạn ngạch {}; chờ thời điểm đặt lại",
+                    windows.join(" và ")
+                ))
+            }
+        }
+    }
+
+    fn earliest_reset(&self) -> Option<DateTime<Utc>> {
+        self.quota_groups
+            .iter()
+            .flat_map(|g| &g.buckets)
+            .filter_map(|b| DateTime::parse_from_rfc3339(b.reset_time.as_deref()?).ok())
+            .map(|t| t.with_timezone(&Utc))
+            .min()
+    }
+
+    fn quota_is_fresh(&self, now: DateTime<Utc>) -> bool {
+        self.error.is_none()
+            && self
+                .checked_at
+                .is_some_and(|t| (0..FRESH_SECONDS).contains(&(now - t).num_seconds()))
+            && self.earliest_reset().is_none_or(|t| t > now)
+            && self.quota_groups.iter().any(|g| !g.buckets.is_empty())
+    }
+
+    fn refresh_due(&self, now: DateTime<Utc>) -> bool {
+        self.next_check.is_none_or(|t| t <= now)
+            // Also handle schedules persisted before reset-aware polling was introduced.
+            || (self.agent == Agent::Codex
+                && self.error.is_none()
+                && self.earliest_reset().is_some_and(|reset| {
+                    reset <= now && self.checked_at.is_none_or(|checked| checked < reset)
+                }))
+    }
+
+    fn schedule_after_success(&self, now: DateTime<Utc>) -> DateTime<Utc> {
+        let regular = now + chrono::Duration::seconds(QUOTA_POLL_SECONDS);
+        if self.agent != Agent::Codex {
+            return regular;
+        }
+        // A server may briefly return the old window after reset. Poll again without
+        // treating the cached percentage as replenished or spinning continuously.
+        self.earliest_reset()
+            .map(|reset| {
+                reset
+                    .max(now + chrono::Duration::seconds(RESET_RETRY_SECONDS))
+                    .min(regular)
+            })
+            .unwrap_or(regular)
+    }
+
+    fn score(&self) -> Option<f64> {
+        if !self.quota_is_fresh(Utc::now()) {
             return None;
         }
         if self.agent == Agent::Claude
@@ -80,6 +194,9 @@ pub struct NativeAccountView {
     quota_groups: Vec<QuotaGroupInfo>,
     quota_percentage: Option<f64>,
     checked_at: Option<DateTime<Utc>>,
+    quota_stale: bool,
+    quota_status: QuotaStatus,
+    quota_message: Option<String>,
     error: Option<String>,
 }
 
@@ -214,7 +331,10 @@ impl AgentManager {
         Ok(accounts.iter().filter(|a| a.agent == agent).map(|a| NativeAccountView {
             id: a.id.clone(), email: a.email.clone(), is_active: active.as_ref() == Some(&a.id),
             quota_groups: a.quota_groups.clone(), quota_percentage: a.score(), checked_at: a.checked_at,
-            error: a.error.clone().or_else(|| if active.is_none() && self.current_credentials(agent).ok().flatten().is_some() { Some("Phiên đang dùng chưa có trong danh sách; hãy nhập lại trước khi tự động chọn".into()) } else { None }).or_else(|| if a.score().is_none() { Some("Quota chưa có, đã hết hoặc cần làm mới".into()) } else { None }),
+            quota_stale: !a.quota_is_fresh(Utc::now()),
+            quota_status: a.quota_status(Utc::now()),
+            quota_message: a.quota_message(a.quota_status(Utc::now())),
+            error: a.error.clone().or_else(|| if active.is_none() && self.current_credentials(agent).ok().flatten().is_some() { Some("Phiên đang dùng chưa có trong danh sách; hãy nhập lại trước khi tự động chọn".into()) } else { None }),
         }).collect())
     }
 
@@ -358,7 +478,7 @@ impl AgentManager {
                 }
                 accounts
                     .iter()
-                    .filter(|a| a.agent == agent && a.next_check.is_none_or(|t| t <= Utc::now()))
+                    .filter(|a| a.agent == agent && a.refresh_due(Utc::now()))
                     .cloned()
                     .collect::<Vec<_>>()
             };
@@ -378,7 +498,8 @@ impl AgentManager {
                     .iter_mut()
                     .find(|a| a.id == account.id && a.credentials == account.credentials)
                 {
-                    stored.next_check = Some(Utc::now() + chrono::Duration::seconds(300));
+                    stored.next_check =
+                        Some(Utc::now() + chrono::Duration::seconds(QUOTA_POLL_SECONDS));
                     match result {
                         Ok((groups, credentials)) => {
                             // Only update the active cache if another process has not replaced it meanwhile.
@@ -402,17 +523,33 @@ impl AgentManager {
                                     stored.quota_groups = groups;
                                     stored.checked_at = Some(Utc::now());
                                     stored.error = None;
+                                    stored.next_check =
+                                        Some(stored.schedule_after_success(Utc::now()));
                                 }
                                 Err(e) => {
                                     if let Some(retry) = e.downcast_ref::<QuotaRetry>() {
                                         stored.next_check =
                                             Some(Utc::now() + chrono::Duration::seconds(retry.0));
+                                    } else if agent == Agent::Codex {
+                                        stored.next_check = Some(
+                                            Utc::now()
+                                                + chrono::Duration::seconds(codex_retry_seconds(
+                                                    &e,
+                                                )),
+                                        );
                                     }
                                     stored.error = Some(e.to_string());
                                 }
                             }
                         }
-                        Err(e) => stored.error = Some(e.to_string()),
+                        Err(e) => {
+                            if agent == Agent::Codex {
+                                stored.next_check = Some(
+                                    Utc::now() + chrono::Duration::seconds(codex_retry_seconds(&e)),
+                                );
+                            }
+                            stored.error = Some(e.to_string());
+                        }
                     }
                     if let Err(e) = self.save(&accounts) {
                         tracing::warn!("Không lưu được quota agent: {e}");
@@ -655,6 +792,140 @@ impl Drop for ProbeDir {
     }
 }
 
+#[derive(Debug, PartialEq)]
+enum CodexRpcError {
+    Unauthorized,
+    LoginExpired,
+    Forbidden,
+    RateLimited,
+    Unsupported,
+    Other(Option<i64>),
+}
+
+impl CodexRpcError {
+    fn from_response(error: &Value) -> Self {
+        let code = error["code"].as_i64();
+        let message = error["message"].as_str().unwrap_or("").to_ascii_lowercase();
+        // Classify upstream errors, but never expose their text: it can contain credentials.
+        if [
+            "refresh_token_reused",
+            "refresh_token_expired",
+            "refresh_token_invalidated",
+            "refresh token has already been used",
+            "refresh token was revoked",
+            "please sign in again",
+        ]
+        .iter()
+        .any(|part| message.contains(part))
+        {
+            Self::LoginExpired
+        } else if code == Some(-32601) || code == Some(-32602) {
+            Self::Unsupported
+        } else if code == Some(401) || message.contains("401") || message.contains("unauthorized") {
+            Self::Unauthorized
+        } else if code == Some(403) || message.contains("403") || message.contains("forbidden") {
+            Self::Forbidden
+        } else if code == Some(429)
+            || message.contains("429")
+            || message.contains("too many requests")
+        {
+            Self::RateLimited
+        } else {
+            Self::Other(code)
+        }
+    }
+}
+
+impl std::fmt::Display for CodexRpcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unauthorized | Self::LoginExpired => write!(
+                f,
+                "Phiên Codex không còn hợp lệ; hãy đăng nhập lại tài khoản Codex"
+            ),
+            Self::Forbidden => write!(
+                f,
+                "Codex từ chối quyền đọc quota (HTTP 403); kiểm tra quyền truy cập tài khoản"
+            ),
+            Self::RateLimited => write!(
+                f,
+                "Codex giới hạn tần suất đọc quota (HTTP 429); sẽ thử lại sau 5 phút"
+            ),
+            Self::Unsupported => write!(
+                f,
+                "Codex CLI không hỗ trợ yêu cầu đọc quota; kiểm tra phiên bản CLI"
+            ),
+            Self::Other(code) => {
+                write!(f, "Codex chưa đọc được quota; sẽ tự động thử lại")?;
+                if let Some(code) = code {
+                    write!(f, " (mã RPC {code})")?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+impl std::error::Error for CodexRpcError {}
+
+fn codex_retry_seconds(error: &anyhow::Error) -> i64 {
+    match error.downcast_ref::<CodexRpcError>() {
+        Some(
+            CodexRpcError::Unauthorized
+            | CodexRpcError::LoginExpired
+            | CodexRpcError::Forbidden
+            | CodexRpcError::RateLimited
+            | CodexRpcError::Unsupported,
+        ) => QUOTA_POLL_SECONDS,
+        _ => 60,
+    }
+}
+
+async fn read_codex_quota<W, R>(
+    input: &mut W,
+    reader: &mut R,
+    credentials: &Value,
+) -> Result<Vec<QuotaGroupInfo>>
+where
+    W: tokio::io::AsyncWrite + Unpin,
+    R: tokio::io::AsyncBufRead + Unpin,
+{
+    let needs_refresh = jwt_claims(&credentials["tokens"]["access_token"])
+        .and_then(|claims| claims["exp"].as_i64())
+        .is_some_and(|expires| expires <= Utc::now().timestamp() + 300);
+    if needs_refresh {
+        input
+            .write_all(
+                b"{\"id\":1,\"method\":\"account/read\",\"params\":{\"refreshToken\":true}}\n",
+            )
+            .await?;
+        read_rpc(reader, 1).await?;
+    }
+    input
+        .write_all(b"{\"id\":2,\"method\":\"account/rateLimits/read\"}\n")
+        .await?;
+    let result = match read_rpc(reader, 2).await {
+        Err(error)
+            if !needs_refresh
+                && error.downcast_ref::<CodexRpcError>() == Some(&CodexRpcError::Unauthorized) =>
+        {
+            // JWT expiry alone cannot detect a rejected session. Refresh once and retry
+            // the read within the existing probe timeout, preserving rotated credentials.
+            input
+                .write_all(
+                    b"{\"id\":3,\"method\":\"account/read\",\"params\":{\"refreshToken\":true}}\n",
+                )
+                .await?;
+            read_rpc(reader, 3).await?;
+            input
+                .write_all(b"{\"id\":4,\"method\":\"account/rateLimits/read\"}\n")
+                .await?;
+            read_rpc(reader, 4).await?
+        }
+        result => result?,
+    };
+    parse_codex_quota(&result)
+}
+
 async fn fetch_codex_quota(
     credentials: &Value,
     data_dir: &Path,
@@ -698,16 +969,7 @@ async fn fetch_codex_quota(
         input.write_all(format!("{}\n", json!({"id":0,"method":"initialize","params":{"clientInfo":{"name":"agent_account_manager","version":"1.0.3"}}})).as_bytes()).await?;
         read_rpc(&mut reader, 0).await?;
         input.write_all(b"{\"method\":\"initialized\"}\n").await?;
-        let needs_refresh = jwt_claims(&credentials["tokens"]["access_token"])
-            .and_then(|claims| claims["exp"].as_i64())
-            .is_some_and(|expires| expires <= Utc::now().timestamp() + 300);
-        if needs_refresh {
-            input.write_all(b"{\"id\":1,\"method\":\"account/read\",\"params\":{\"refreshToken\":true}}\n").await?;
-            read_rpc(&mut reader, 1).await?;
-        }
-        input.write_all(b"{\"id\":2,\"method\":\"account/rateLimits/read\"}\n").await?;
-        let result = read_rpc(&mut reader, 2).await?;
-        parse_codex_quota(&result)
+        read_codex_quota(&mut input, &mut reader, credentials).await
     }).await.unwrap_or_else(|_| Err(anyhow!("Đọc quota Codex quá thời gian chờ")));
     let _ = child.kill().await;
     let _ = child.wait().await;
@@ -716,7 +978,10 @@ async fn fetch_codex_quota(
     Ok((result, refreshed))
 }
 
-pub(super) async fn read_rpc<R: tokio::io::AsyncBufRead + Unpin>(reader: &mut R, id: i64) -> Result<Value> {
+pub(super) async fn read_rpc<R: tokio::io::AsyncBufRead + Unpin>(
+    reader: &mut R,
+    id: i64,
+) -> Result<Value> {
     loop {
         let mut line = String::new();
         ensure!(
@@ -726,10 +991,9 @@ pub(super) async fn read_rpc<R: tokio::io::AsyncBufRead + Unpin>(reader: &mut R,
         ensure!(line.len() <= MAX_JSON, "Phản hồi Codex quá lớn");
         let message: Value = serde_json::from_str(&line).context("Phản hồi Codex không hợp lệ")?;
         if message["id"].as_i64() == Some(id) {
-            ensure!(
-                message.get("error").is_none(),
-                "Codex từ chối đọc quota; kiểm tra đăng nhập và phiên bản CLI"
-            );
+            if let Some(error) = message.get("error").filter(|error| !error.is_null()) {
+                return Err(CodexRpcError::from_response(error).into());
+            }
             return message
                 .get("result")
                 .cloned()
@@ -1018,5 +1282,263 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("secret token"));
+    }
+
+    #[tokio::test]
+    async fn codex_polling_tracks_reset_and_retries_old_windows_without_spinning() {
+        let f = Fixture::new();
+        f.add(Agent::Codex, "reset", 0.0).await;
+        let now = Utc::now();
+        let reset = now + chrono::Duration::seconds(90);
+        let mut accounts = f.manager.accounts.lock().await;
+        let account = &mut accounts[0];
+        account.checked_at = Some(now);
+        account.quota_groups[0].buckets[0].reset_time = Some(reset.to_rfc3339());
+        // A previously persisted five-minute schedule must not hide a newly reset window.
+        account.next_check = Some(now + chrono::Duration::seconds(300));
+        assert!(!account.refresh_due(now));
+        assert_eq!(account.schedule_after_success(now), reset);
+        assert!(account.refresh_due(reset));
+        assert!(!account.quota_is_fresh(reset));
+
+        // The upstream can still return the old 0% window just after reset.
+        account.checked_at = Some(reset);
+        account.next_check = Some(account.schedule_after_success(reset));
+        assert_eq!(
+            account.next_check,
+            Some(reset + chrono::Duration::seconds(30))
+        );
+        assert!(!account.refresh_due(reset));
+        assert!(account.refresh_due(reset + chrono::Duration::seconds(30)));
+        assert_eq!(account.quota_groups[0].buckets[0].remaining_percentage, 0.0);
+
+        // A successful read with a new window is the only source of replenished quota.
+        account.quota_groups[0].buckets[0] = quota_bucket(
+            "FIVE_HOUR".into(),
+            0.0,
+            Some((reset + chrono::Duration::hours(5)).timestamp()),
+        )
+        .unwrap();
+        assert!(account.quota_is_fresh(reset));
+        assert_eq!(
+            account.schedule_after_success(reset),
+            reset + chrono::Duration::seconds(300)
+        );
+    }
+
+    #[tokio::test]
+    async fn quota_views_distinguish_exhaustion_from_stale_data_and_read_errors() {
+        let f = Fixture::new();
+        f.add(Agent::Codex, "five-hour-empty", 0.0).await;
+        f.add(Agent::Codex, "weekly-empty", 90.0).await;
+        f.add(Agent::Codex, "both-empty", 0.0).await;
+        f.add(Agent::Codex, "reset", 0.0).await;
+        f.add(Agent::Codex, "login-error", 0.0).await;
+        f.add(Agent::Codex, "unknown", 0.0).await;
+        f.add(Agent::Codex, "ready", 80.0).await;
+        {
+            let mut accounts = f.manager.accounts.lock().await;
+            for account in accounts.iter_mut() {
+                match account.email.as_str() {
+                    "weekly-empty" | "both-empty" => account.quota_groups[0]
+                        .buckets
+                        .push(quota_bucket("WEEKLY".into(), 100.0, None).unwrap()),
+                    "reset" => {
+                        account.quota_groups[0].buckets[0].reset_time =
+                            Some((Utc::now() - chrono::Duration::seconds(1)).to_rfc3339())
+                    }
+                    "login-error" => account.error = Some(CodexRpcError::LoginExpired.to_string()),
+                    "unknown" => account.checked_at = None,
+                    _ => (),
+                }
+            }
+        }
+        let views = f.manager.list(Agent::Codex).await.unwrap();
+        for (name, status, message) in [
+            (
+                "five-hour-empty",
+                QuotaStatus::Exhausted,
+                Some("Đã hết hạn ngạch 5 giờ; chờ thời điểm đặt lại"),
+            ),
+            (
+                "weekly-empty",
+                QuotaStatus::Exhausted,
+                Some("Đã hết hạn ngạch tuần; chờ thời điểm đặt lại"),
+            ),
+            (
+                "both-empty",
+                QuotaStatus::Exhausted,
+                Some("Đã hết hạn ngạch 5 giờ và tuần; chờ thời điểm đặt lại"),
+            ),
+            (
+                "reset",
+                QuotaStatus::Stale,
+                Some("Quota đã cũ hoặc đến giờ đặt lại; đang chờ dữ liệu mới"),
+            ),
+            (
+                "unknown",
+                QuotaStatus::Unknown,
+                Some("Chưa có dữ liệu quota; đang chờ lần đọc thành công"),
+            ),
+            ("ready", QuotaStatus::Ready, None),
+        ] {
+            let view = views.iter().find(|v| v.email == name).unwrap();
+            assert_eq!(view.quota_status, status);
+            assert_eq!(view.quota_message.as_deref(), message);
+            assert!(view.error.is_none());
+            if status == QuotaStatus::Exhausted {
+                assert!(!view.quota_stale);
+                assert!(view.quota_percentage.is_none());
+            }
+        }
+        let failed = views.iter().find(|v| v.email == "login-error").unwrap();
+        assert_eq!(failed.quota_status, QuotaStatus::Error);
+        assert!(failed.quota_message.is_none());
+        assert!(failed.quota_stale);
+        assert!(failed.error.as_ref().unwrap().contains("đăng nhập lại"));
+    }
+
+    #[tokio::test]
+    async fn codex_polling_observes_weekly_reset_and_error_backoff() {
+        let f = Fixture::new();
+        f.add(Agent::Codex, "weekly", 90.0).await;
+        let now = Utc::now();
+        let mut accounts = f.manager.accounts.lock().await;
+        let account = &mut accounts[0];
+        account.checked_at = Some(now);
+        account.quota_groups[0].buckets.push(
+            quota_bucket(
+                "WEEKLY".into(),
+                100.0,
+                Some((now + chrono::Duration::seconds(60)).timestamp()),
+            )
+            .unwrap(),
+        );
+        let reset = account.earliest_reset().unwrap();
+        assert_eq!(account.schedule_after_success(now), reset);
+        account.next_check = Some(reset + chrono::Duration::seconds(300));
+        account.error = Some("HTTP 429".into());
+        assert!(!account.refresh_due(reset));
+        assert!(!account.quota_is_fresh(now));
+        assert!(account.refresh_due(reset + chrono::Duration::seconds(300)));
+        assert_eq!(codex_retry_seconds(&CodexRpcError::RateLimited.into()), 300);
+        assert_eq!(codex_retry_seconds(&anyhow!("timeout")), 60);
+    }
+
+    fn rpc_lines(messages: &[Value]) -> Vec<u8> {
+        messages
+            .iter()
+            .map(|v| format!("{v}\n"))
+            .collect::<String>()
+            .into_bytes()
+    }
+
+    fn sent_requests(bytes: &[u8]) -> Vec<Value> {
+        String::from_utf8_lossy(bytes)
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn codex_unauthorized_refreshes_once_and_reads_new_quota() {
+        let data = rpc_lines(&[
+            json!({"id":2,"error":{"code":-32000,"message":"unexpected status 401 Unauthorized: secret token"}}),
+            json!({"method":"account/updated","params":{}}),
+            json!({"id":3,"result":{"account":{"type":"chatgpt"}}}),
+            json!({"id":4,"result":{"rateLimits":{"primary":{"usedPercent":0,"windowDurationMins":300}}}}),
+        ]);
+        let mut input = Vec::new();
+        let groups = read_codex_quota(
+            &mut input,
+            &mut BufReader::new(&data[..]),
+            &credentials(Agent::Codex, "a"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(groups[0].buckets[0].remaining_percentage, 100.0);
+        let requests = sent_requests(&input);
+        assert_eq!(requests.len(), 3);
+        assert_eq!(requests[0]["method"], "account/rateLimits/read");
+        assert_eq!(requests[1]["method"], "account/read");
+        assert_eq!(requests[1]["params"]["refreshToken"], true);
+        assert_eq!(requests[2]["method"], "account/rateLimits/read");
+    }
+
+    #[tokio::test]
+    async fn codex_auth_retry_stops_on_repeated_rejection_or_revoked_token() {
+        for refresh_fails in [false, true] {
+            let mut responses = vec![json!({"id":2,"error":{"message":"401 Unauthorized"}})];
+            if refresh_fails {
+                responses
+                    .push(json!({"id":3,"error":{"message":"refresh_token_reused secret token"}}));
+            } else {
+                responses.push(json!({"id":3,"result":{}}));
+                responses.push(json!({"id":4,"error":{"message":"401 Unauthorized secret token"}}));
+            }
+            let data = rpc_lines(&responses);
+            let mut input = Vec::new();
+            let error = read_codex_quota(
+                &mut input,
+                &mut BufReader::new(&data[..]),
+                &credentials(Agent::Codex, "a"),
+            )
+            .await
+            .unwrap_err();
+            assert!(error.to_string().contains("đăng nhập lại"));
+            assert!(!format!("{error:?}").contains("secret token"));
+            assert_eq!(
+                sent_requests(&input).len(),
+                if refresh_fails { 2 } else { 3 }
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn codex_does_not_rotate_tokens_for_non_auth_errors_or_success() {
+        for response in [
+            json!({"id":2,"error":{"code":-32601,"message":"secret token"}}),
+            json!({"id":2,"error":{"message":"429 Too Many Requests secret token"}}),
+            json!({"id":2,"error":{"message":"503 Service Unavailable secret token"}}),
+            json!({"id":2,"result":{"rateLimits":{"primary":{"usedPercent":25}}}}),
+        ] {
+            let data = rpc_lines(&[response.clone()]);
+            let mut input = Vec::new();
+            let result = read_codex_quota(
+                &mut input,
+                &mut BufReader::new(&data[..]),
+                &credentials(Agent::Codex, "a"),
+            )
+            .await;
+            assert_eq!(result.is_ok(), response.get("result").is_some());
+            assert_eq!(sent_requests(&input).len(), 1);
+            if let Err(error) = result {
+                assert!(!format!("{error:?}").contains("secret token"));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn codex_expired_jwt_refreshes_before_quota_and_never_refreshes_twice() {
+        let mut auth = credentials(Agent::Codex, "a");
+        let claims = json!({"exp":Utc::now().timestamp()-60});
+        auth["tokens"]["access_token"] = json!(format!(
+            "e30.{}.sig",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims.to_string())
+        ));
+        let data = rpc_lines(&[
+            json!({"id":1,"result":{}}),
+            json!({"id":2,"error":{"message":"401 Unauthorized"}}),
+        ]);
+        let mut input = Vec::new();
+        assert!(
+            read_codex_quota(&mut input, &mut BufReader::new(&data[..]), &auth)
+                .await
+                .is_err()
+        );
+        let requests = sent_requests(&input);
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0]["method"], "account/read");
+        assert_eq!(requests[1]["method"], "account/rateLimits/read");
     }
 }
