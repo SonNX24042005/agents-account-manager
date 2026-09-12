@@ -1,4 +1,6 @@
-use anyhow::{Context, Result};
+use crate::client::{ApiClient, UnifiedAccountDto};
+use crate::proxy::selection::Agent;
+use anyhow::{bail, Context, Result};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{Read, Write};
@@ -9,15 +11,33 @@ use std::process::{Command, Stdio};
 pub struct Cli;
 
 impl Cli {
-    pub fn handle_args(args: &[String]) -> Option<Result<()>> {
+    pub async fn handle_args(args: &[String]) -> Option<Result<()>> {
         if args.len() < 2 {
-            return Some(Self::open_dashboard());
+            return Some(Self::handle_list(None, &[]).await);
         }
 
-        let cmd = args[1].to_lowercase();
-        match cmd.as_str() {
+        let first = args[1].to_lowercase();
+        // Kiểm tra xem tham số đầu tiên có phải là tên agent hay không
+        if let Ok(agent) = Self::parse_agent(&first) {
+            return Some(Self::handle_agent_command(agent, &args[2..]).await);
+        }
+
+        match first.as_str() {
             "run" | "daemon" => None,
-            "open" | "ui" | "web" => Some(Self::open_dashboard()),
+            "tui" => Some(crate::tui::run_tui().await),
+            "check" | "overview" => Some(Self::handle_overview().await),
+            "accounts" | "list" | "ls" => Some(Self::handle_list(None, &args[2..]).await),
+            "switch" => Some(Self::handle_switch(None, &args[2..]).await),
+            "refresh" => Some(Self::handle_refresh(None, &args[2..]).await),
+            "preference" | "pref" => Some(Self::handle_preference(&args[2..]).await),
+            "auto-select" | "select" => Some(Self::handle_auto_select(None, &args[2..]).await),
+            "delete" | "rm" => Some(Self::handle_delete(None, &args[2..]).await),
+            "settings" => Some(Self::handle_settings(None, &args[2..]).await),
+            "add" => Some(Self::handle_add(None, &args[2..]).await),
+            "import" => Some(Self::handle_import(None, &args[2..]).await),
+            "login" => Some(Self::handle_login(None, &args[2..]).await),
+            "reset" => Some(Self::handle_reset().await),
+            "open" | "ui" | "web" | "dashboard" => Some(Self::open_dashboard()),
             "start" => Some(Self::start_service()),
             "stop" => Some(Self::stop_service()),
             "restart" => Some(Self::restart_service()),
@@ -58,7 +78,97 @@ impl Cli {
         }
     }
 
-    fn open_dashboard() -> Result<()> {
+    async fn handle_agent_command(agent: Agent, args: &[String]) -> Result<()> {
+        if args.is_empty() {
+            return Self::handle_list(Some(agent), &[]).await;
+        }
+
+        let subcmd = args[0].to_lowercase();
+        let sub_args = &args[1..];
+        match subcmd.as_str() {
+            "accounts" | "list" | "ls" => Self::handle_list(Some(agent), sub_args).await,
+            "switch" => Self::handle_switch(Some(agent), sub_args).await,
+            "refresh" => Self::handle_refresh(Some(agent), sub_args).await,
+            "auto-select" | "select" => Self::handle_auto_select(Some(agent), sub_args).await,
+            "settings" => Self::handle_settings(Some(agent), sub_args).await,
+            "delete" | "rm" => Self::handle_delete(Some(agent), sub_args).await,
+            "add" => Self::handle_add(Some(agent), sub_args).await,
+            "import" => Self::handle_import(Some(agent), sub_args).await,
+            "login" => Self::handle_login(Some(agent), sub_args).await,
+            "preference" | "pref" => {
+                if agent == Agent::Antigravity {
+                    Self::handle_preference(sub_args).await
+                } else {
+                    println!("Lưu ý: Cấu hình ưu tiên mô hình (preference) chỉ áp dụng cho Antigravity.");
+                    println!("Dùng lệnh 'aam agy preference' để cấu hình.");
+                    Ok(())
+                }
+            }
+            "reset" => {
+                if agent == Agent::Antigravity {
+                    Self::handle_reset().await
+                } else {
+                    println!("Lưu ý: Đặt lại thời gian chờ (reset cooldowns) chỉ áp dụng cho Antigravity.");
+                    Ok(())
+                }
+            }
+            "help" | "-h" | "--help" => {
+                Self::print_agent_help(agent);
+                Ok(())
+            }
+            unknown => {
+                println!("Lệnh không hợp lệ cho {}: '{}'\n", agent.name(), unknown);
+                Self::print_agent_help(agent);
+                Ok(())
+            }
+        }
+    }
+
+    fn print_agent_help(agent: Agent) {
+        let name = agent.name();
+        let alias = match agent {
+            Agent::Antigravity => "agy",
+            Agent::Codex => "codex",
+            Agent::Claude => "claude",
+        };
+        println!("Quản lý tài khoản {} (aam {})", name, alias);
+        println!();
+        println!("Cách sử dụng:");
+        println!("  aam {} <lệnh_con> [tùy chọn]", alias);
+        println!();
+        println!("Các lệnh con khả dụng:");
+        println!("  list, ls              Xem danh sách tài khoản (--active, --json)");
+        println!("  switch <# | ID>       Chuyển tài khoản đang hoạt động cho {}", name);
+        println!("  refresh               Làm mới dữ liệu hạn ngạch ngay lập tức");
+        println!("  auto-select           Tự động chọn tài khoản tối ưu nhất");
+        println!("  settings              Xem hoặc cấu hình tự động chọn (--enable/--disable)");
+        match agent {
+            Agent::Antigravity => {
+                println!("  login                 Đăng nhập tài khoản Google OAuth qua trình duyệt");
+                println!("  add                   Thêm tài khoản thủ công (--email, --access-token...)");
+                println!("  preference            Xem hoặc đổi cấu hình ưu tiên (auto | gemini | claude_gpt)");
+                println!("  reset                 Đặt lại thời gian chờ (cooldowns)");
+            }
+            Agent::Codex => {
+                println!("  login                 Đăng nhập thiết bị qua trình duyệt (Device OAuth)");
+                println!("  import                Nhập tài khoản từ Codex CLI cục bộ (--email)");
+                println!("  add                   Thêm tài khoản thủ công (--email, --token, --id-token)");
+            }
+            Agent::Claude => {
+                println!("  import                Nhập tài khoản từ Claude Code CLI cục bộ (--email)");
+                println!("  add                   Thêm tài khoản thủ công (--email, --token)");
+            }
+        }
+        println!("  delete <# | ID>       Xóa tài khoản khỏi danh sách (-y để bỏ qua xác nhận)");
+        println!("  help                  Xem hướng dẫn này");
+        println!();
+    }
+
+    pub fn open_dashboard_url() -> Result<()> {
+        Self::open_dashboard()
+    }
+
+    pub fn open_dashboard() -> Result<()> {
         let port = crate::config::Config::default().port;
         if !Self::is_relay_service_running(port) {
             anyhow::ensure!(
@@ -259,7 +369,7 @@ impl Cli {
         }
     }
 
-    fn start_service() -> Result<()> {
+    pub fn start_service() -> Result<()> {
         let port = crate::config::Config::default().port;
         if Self::is_port_in_use(port) {
             anyhow::ensure!(
@@ -995,27 +1105,1099 @@ impl Cli {
         Ok(format!("{:x}", hasher.finalize()))
     }
 
+    async fn handle_overview() -> Result<()> {
+        let port = crate::config::Config::default().port;
+        let is_running = Self::is_relay_service_running(port);
+
+        println!("========================================================================");
+        println!("   Tổng quan dịch vụ và tài khoản (Agent Account Manager)");
+        println!("========================================================================");
+
+        if is_running {
+            println!("• Trạng thái dịch vụ:   Đang hoạt động (http://127.0.0.1:{port})");
+        } else {
+            println!("• Trạng thái dịch vụ:   Đã dừng (gõ 'aam start' để khởi chạy)");
+        }
+
+        let is_sysd_enabled = Self::is_systemd_service_enabled();
+        println!(
+            "• Tự khởi động (boot):  {}",
+            if is_sysd_enabled {
+                "Đã bật (systemd)"
+            } else {
+                "Đang tắt"
+            }
+        );
+        println!();
+
+        if !is_running {
+            println!("Gợi ý: Dùng 'aam start' để khởi chạy dịch vụ hoặc 'aam tui' để vào giao diện.");
+            return Ok(());
+        }
+
+        let client = ApiClient::new();
+        let (anti_accounts, codex_accounts, claude_accounts, flags) = tokio::join!(
+            client.list_accounts_for_agent(Agent::Antigravity),
+            client.list_accounts_for_agent(Agent::Codex),
+            client.list_accounts_for_agent(Agent::Claude),
+            client.get_agent_settings(),
+        );
+
+        let anti_accs = anti_accounts.unwrap_or_default();
+        let codex_accs = codex_accounts.unwrap_or_default();
+        let claude_accs = claude_accounts.unwrap_or_default();
+        let flags = flags.unwrap_or(crate::client::SelectionFlagsDto {
+            antigravity: true,
+            codex: false,
+            claude: false,
+        });
+
+        println!("{:<13} {:<7} {:<36} {:<16} {:<12}", "Agent", "Số TK", "Tài khoản đang dùng", "Hạn ngạch", "Tự động chọn");
+        println!("{:-<13} {:-<7} {:-<36} {:-<16} {:-<12}", "", "", "", "", "");
+
+        // Antigravity
+        {
+            let count = anti_accs.len().to_string();
+            let active = anti_accs.iter().find(|a| a.is_active);
+            let active_str = if let Some(a) = active {
+                Self::truncate_str(&a.email, 35)
+            } else if anti_accs.is_empty() {
+                "(Chưa có tài khoản)".to_string()
+            } else {
+                "(Chưa chọn)".to_string()
+            };
+            let quota_str = if let Some(a) = active {
+                if let Some(q) = a.quota_percentage {
+                    if q < 100.0 {
+                        if let Some(cd) = a.primary_reset_countdown() {
+                            format!("{:.0}% ({})", q, cd)
+                        } else {
+                            format!("{:.0}%", q)
+                        }
+                    } else {
+                        format!("{:.0}%", q)
+                    }
+                } else {
+                    "--".to_string()
+                }
+            } else {
+                "--".to_string()
+            };
+            let auto_str = if flags.antigravity { "Bật" } else { "Tắt" };
+            println!("{:<13} {:<7} {:<36} {:<16} {:<12}", "Antigravity", count, active_str, quota_str, auto_str);
+        }
+
+        // Codex
+        {
+            let count = codex_accs.len().to_string();
+            let active = codex_accs.iter().find(|a| a.is_active);
+            let active_str = if let Some(a) = active {
+                Self::truncate_str(&a.email, 35)
+            } else if codex_accs.is_empty() {
+                "(Chưa có tài khoản)".to_string()
+            } else {
+                "(Chưa chọn)".to_string()
+            };
+            let quota_str = if let Some(a) = active {
+                if let Some(q) = a.quota_percentage {
+                    if q < 100.0 {
+                        if let Some(cd) = a.primary_reset_countdown() {
+                            format!("{:.0}% ({})", q, cd)
+                        } else {
+                            format!("{:.0}%", q)
+                        }
+                    } else {
+                        format!("{:.0}%", q)
+                    }
+                } else {
+                    "--".to_string()
+                }
+            } else {
+                "--".to_string()
+            };
+            let auto_str = if flags.codex { "Bật" } else { "Tắt" };
+            println!("{:<13} {:<7} {:<36} {:<16} {:<12}", "Codex", count, active_str, quota_str, auto_str);
+        }
+
+        // Claude
+        {
+            let count = claude_accs.len().to_string();
+            let active = claude_accs.iter().find(|a| a.is_active);
+            let active_str = if let Some(a) = active {
+                Self::truncate_str(&a.email, 35)
+            } else if claude_accs.is_empty() {
+                "(Chưa có tài khoản)".to_string()
+            } else {
+                "(Chưa chọn)".to_string()
+            };
+            let quota_str = if let Some(a) = active {
+                if let Some(q) = a.quota_percentage {
+                    if q < 100.0 {
+                        if let Some(cd) = a.primary_reset_countdown() {
+                            format!("{:.0}% ({})", q, cd)
+                        } else {
+                            format!("{:.0}%", q)
+                        }
+                    } else {
+                        format!("{:.0}%", q)
+                    }
+                } else {
+                    "--".to_string()
+                }
+            } else {
+                "--".to_string()
+            };
+            let auto_str = if flags.claude { "Bật" } else { "Tắt" };
+            println!("{:<13} {:<7} {:<36} {:<16} {:<12}", "Claude", count, active_str, quota_str, auto_str);
+        }
+
+        println!();
+        println!("Quản lý theo từng agent:");
+        println!("  • aam agy <lệnh>      Quản lý Antigravity (list, switch, login, add, preference...)");
+        println!("  • aam codex <lệnh>    Quản lý Codex (list, switch, login, import, add...)");
+        println!("  • aam claude <lệnh>   Quản lý Claude (list, switch, import, add...)");
+        println!();
+        println!("Lệnh chung:");
+        println!("  • aam                 Xem bảng danh sách tài khoản toàn bộ agent (hoặc 'aam list')");
+        println!("  • aam tui             Mở giao diện terminal tương tác toàn màn hình");
+        println!("  • aam web             Mở bảng điều khiển web trên trình duyệt");
+        println!("  • aam help            Xem danh sách đầy đủ các lệnh");
+        Ok(())
+    }
+
+    async fn handle_list(scoped_agent: Option<Agent>, args: &[String]) -> Result<()> {
+        let mut agent_filter = scoped_agent;
+        let mut json_output = false;
+        let mut active_only = false;
+
+        let mut iter = args.iter();
+        while let Some(arg) = iter.next() {
+            match arg.as_str() {
+                "-a" | "--agent" => {
+                    if let Some(val) = iter.next() {
+                        agent_filter = Some(Self::parse_agent(val)?);
+                    } else {
+                        bail!("Thiếu tên agent sau tùy chọn -a / --agent");
+                    }
+                }
+                "--json" => json_output = true,
+                "--active" => active_only = true,
+                "-h" | "--help" => {
+                    if let Some(agent) = scoped_agent {
+                        let alias = match agent {
+                            Agent::Antigravity => "agy",
+                            Agent::Codex => "codex",
+                            Agent::Claude => "claude",
+                        };
+                        println!("Cách sử dụng: aam {} list [tùy chọn]", alias);
+                    } else {
+                        println!("Cách sử dụng: aam list [tùy chọn]");
+                    }
+                    println!();
+                    println!("Tùy chọn:");
+                    if scoped_agent.is_none() {
+                        println!("  -a, --agent <agent>   Lọc theo agent (antigravity, codex, claude)");
+                    }
+                    println!("  --active              Chỉ hiển thị tài khoản đang hoạt động");
+                    println!("  --json                Xuất dữ liệu định dạng json");
+                    println!("  -h, --help            Xem hướng dẫn lệnh list");
+                    return Ok(());
+                }
+                unknown => bail!("Tùy chọn không hợp lệ: '{}'", unknown),
+            }
+        }
+
+        let client = ApiClient::new();
+        if let Some(agent) = agent_filter {
+            let mut accounts = client.list_accounts_for_agent(agent).await?;
+            if active_only {
+                accounts.retain(|a| a.is_active);
+            }
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&accounts)?);
+                return Ok(());
+            }
+            Self::print_agent_account_table(agent, &accounts);
+            println!();
+            let active_count = accounts.iter().filter(|a| a.is_active).count();
+            let alias = match agent {
+                Agent::Antigravity => "agy",
+                Agent::Codex => "codex",
+                Agent::Claude => "claude",
+            };
+            println!("Tổng cộng: {} tài khoản ({} đang hoạt động).", accounts.len(), active_count);
+            println!("Gợi ý: Dùng 'aam {} switch <# hoặc email>' để chuyển tài khoản.", alias);
+        } else {
+            let mut all_accounts = client.list_all_accounts().await?;
+            if active_only {
+                all_accounts.retain(|a| a.is_active);
+            }
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&all_accounts)?);
+                return Ok(());
+            }
+
+            let agents = [Agent::Antigravity, Agent::Codex, Agent::Claude];
+            for (i, agent) in agents.iter().enumerate() {
+                if i > 0 {
+                    println!();
+                }
+                let accs: Vec<UnifiedAccountDto> = all_accounts
+                    .iter()
+                    .filter(|a| a.agent == *agent)
+                    .cloned()
+                    .collect();
+                Self::print_agent_account_table(*agent, &accs);
+            }
+
+            let total_active = all_accounts.iter().filter(|a| a.is_active).count();
+            println!();
+            println!("Tổng cộng: {} tài khoản trên toàn bộ agent ({} đang hoạt động).", all_accounts.len(), total_active);
+            println!("Gợi ý:");
+            println!("  • Chuyển tài khoản theo số thứ tự của agent: 'aam agy switch <#>' hoặc 'aam codex switch <#>'");
+            println!("  • Chuyển tài khoản theo số thứ tự hoặc email: 'aam switch <# | email>'");
+            println!("  • Xem và thao tác trực quan: 'aam tui'");
+        }
+
+        Ok(())
+    }
+
+    fn print_agent_account_table(agent: Agent, accounts: &[UnifiedAccountDto]) {
+        let active_count = accounts.iter().filter(|a| a.is_active).count();
+
+        if accounts.is_empty() {
+            println!("=== {} (0 tài khoản) ===", agent.name());
+            match agent {
+                Agent::Antigravity => println!("(Chưa có tài khoản nào · Dùng 'aam agy login' hoặc 'aam agy add' để thêm)"),
+                Agent::Codex => println!("(Chưa có tài khoản nào · Dùng 'aam codex login' hoặc 'aam codex import' để thêm)"),
+                Agent::Claude => println!("(Chưa có tài khoản nào · Dùng 'aam claude import' để thêm)"),
+            }
+            return;
+        }
+
+        let detail_width = if agent == Agent::Antigravity { 62 } else { 46 };
+
+        println!("=== {} ({} tài khoản · {} đang hoạt động) ===", agent.name(), accounts.len(), active_count);
+        println!("{:<4} {:<12} {:<36} {}", "#", "Trạng thái", "Email", "Chi tiết");
+        println!("{:-<4} {:-<12} {:-<36} {:-<width$}", "", "", "", "", width = detail_width);
+
+        for (idx, acc) in accounts.iter().enumerate() {
+            let num = format!("[{:>2}]", idx + 1);
+            let status_str = if acc.is_active {
+                "* Đang dùng"
+            } else if acc.error.is_some() {
+                "! Lỗi"
+            } else if acc.status == "Hết hạn ngạch" || acc.quota_percentage == Some(0.0) {
+                "x Hết quota"
+            } else if acc.status == "Chờ cập nhật" {
+                "~ Chờ"
+            } else {
+                "- Sẵn sàng"
+            };
+
+            let detail_str = if acc.quota_groups.len() > 1 {
+                let mut group_parts = Vec::new();
+                for group in &acc.quota_groups {
+                    let grp_rank = if group.name.to_lowercase().contains("gemini") {
+                        0
+                    } else if group.name.to_lowercase().contains("claude") {
+                        1
+                    } else {
+                        2
+                    };
+                    let grp_label = if group.name.to_lowercase().contains("gemini") {
+                        "Gem"
+                    } else if group.name.to_lowercase().contains("claude") {
+                        "Claude"
+                    } else {
+                        &group.name
+                    };
+
+                    let mut sorted_buckets = group.buckets.clone();
+                    sorted_buckets.sort_by_key(|b| {
+                        if b.is_5h() {
+                            0
+                        } else if b.is_weekly() {
+                            1
+                        } else {
+                            2
+                        }
+                    });
+
+                    let bucket_texts: Vec<String> = sorted_buckets
+                        .iter()
+                        .map(|b| {
+                            let pct = b.effective_percentage();
+                            let reset_suffix = if pct < 100.0 {
+                                b.reset_countdown()
+                                    .map(|cd| format!(" ({})", cd))
+                                    .unwrap_or_default()
+                            } else {
+                                String::new()
+                            };
+                            format!("{:.0}%{}", pct, reset_suffix)
+                        })
+                        .collect();
+
+                    if !bucket_texts.is_empty() {
+                        group_parts.push((grp_rank, format!("{}: {}", grp_label, bucket_texts.join(" · "))));
+                    }
+                }
+
+                group_parts.sort_by_key(|(rank, _)| *rank);
+                let group_texts: Vec<String> = group_parts.into_iter().map(|(_, text)| text).collect();
+                if group_texts.is_empty() {
+                    acc.status.clone()
+                } else {
+                    group_texts.join(" | ")
+                }
+            } else {
+                let mut detail_parts = Vec::new();
+                for group in &acc.quota_groups {
+                    for bucket in &group.buckets {
+                        let pct = bucket.effective_percentage();
+                        let win_rank = if bucket.is_5h() {
+                            0
+                        } else if bucket.is_weekly() {
+                            1
+                        } else {
+                            2
+                        };
+
+                        let win = if bucket.is_5h() {
+                            "5h"
+                        } else if bucket.is_weekly() {
+                            "Tuần"
+                        } else {
+                            &bucket.window
+                        };
+
+                        let reset_suffix = if pct < 100.0 {
+                            bucket
+                                .reset_countdown()
+                                .map(|cd| format!(" ({})", cd))
+                                .unwrap_or_default()
+                        } else {
+                            String::new()
+                        };
+                        detail_parts.push((win_rank, format!("{}: {:.0}%{}", win, pct, reset_suffix)));
+                    }
+                }
+
+                detail_parts.sort_by_key(|(rank, _)| *rank);
+                let detail_texts: Vec<String> = detail_parts.into_iter().map(|(_, text)| text).collect();
+                if detail_texts.is_empty() {
+                    acc.status.clone()
+                } else {
+                    detail_texts.join(" · ")
+                }
+            };
+
+            let truncated_detail = Self::truncate_str(&detail_str, detail_width - 1);
+            let email_display = Self::truncate_str(&acc.email, 35);
+
+            println!("{:<4} {:<12} {:<36} {}", num, status_str, email_display, truncated_detail);
+        }
+    }
+
+    async fn handle_switch(scoped_agent: Option<Agent>, args: &[String]) -> Result<()> {
+        let mut target = None;
+        let mut agent_filter = scoped_agent;
+        let mut iter = args.iter();
+
+        while let Some(arg) = iter.next() {
+            match arg.as_str() {
+                "-a" | "--agent" => {
+                    if let Some(val) = iter.next() {
+                        agent_filter = Some(Self::parse_agent(val)?);
+                    } else {
+                        bail!("Thiếu tên agent sau tùy chọn -a / --agent");
+                    }
+                }
+                "-h" | "--help" => {
+                    let prefix = match scoped_agent {
+                        Some(Agent::Antigravity) => "aam agy",
+                        Some(Agent::Codex) => "aam codex",
+                        Some(Agent::Claude) => "aam claude",
+                        None => "aam",
+                    };
+                    println!("Cách sử dụng: {} switch <# | ID | email> [tùy chọn]", prefix);
+                    println!();
+                    println!("Tùy chọn:");
+                    if scoped_agent.is_none() {
+                        println!("  -a, --agent <agent>   Chỉ định agent (antigravity, codex, claude)");
+                    }
+                    println!("  -h, --help            Xem hướng dẫn lệnh switch");
+                    return Ok(());
+                }
+                val if !val.starts_with('-') && target.is_none() => {
+                    target = Some(val.to_string());
+                }
+                unknown => bail!("Tùy chọn không hợp lệ: '{}'", unknown),
+            }
+        }
+
+        let Some(target) = target else {
+            let prefix = match scoped_agent {
+                Some(Agent::Antigravity) => "aam agy",
+                Some(Agent::Codex) => "aam codex",
+                Some(Agent::Claude) => "aam claude",
+                None => "aam",
+            };
+            println!("Cách sử dụng: {} switch <# | ID | email>", prefix);
+            println!();
+            println!("Ví dụ:");
+            println!("  {} switch 1", prefix);
+            println!("  {} switch user@example.com", prefix);
+            bail!("Thiếu định danh tài khoản cần chuyển");
+        };
+
+        let client = ApiClient::new();
+        let accounts = if let Some(agent) = agent_filter {
+            client.list_accounts_for_agent(agent).await?
+        } else {
+            client.list_all_accounts().await?
+        };
+
+        let matched = Self::find_account(&accounts, &target)?;
+        client.switch_account(matched.agent, &matched.id).await?;
+        println!("✓ Đã chuyển sang tài khoản {} ({}) thành công.", matched.email, matched.agent.name());
+        Ok(())
+    }
+
+    async fn handle_refresh(scoped_agent: Option<Agent>, args: &[String]) -> Result<()> {
+        let mut agent_filter = scoped_agent;
+        let mut iter = args.iter();
+
+        while let Some(arg) = iter.next() {
+            match arg.as_str() {
+                "-a" | "--agent" => {
+                    if let Some(val) = iter.next() {
+                        agent_filter = Some(Self::parse_agent(val)?);
+                    } else {
+                        bail!("Thiếu tên agent sau tùy chọn -a / --agent");
+                    }
+                }
+                "-h" | "--help" => {
+                    let prefix = match scoped_agent {
+                        Some(Agent::Antigravity) => "aam agy",
+                        Some(Agent::Codex) => "aam codex",
+                        Some(Agent::Claude) => "aam claude",
+                        None => "aam",
+                    };
+                    println!("Cách sử dụng: {} refresh [tùy chọn]", prefix);
+                    println!();
+                    println!("Tùy chọn:");
+                    if scoped_agent.is_none() {
+                        println!("  -a, --agent <agent>   Chỉ định agent cần làm mới (antigravity, codex, claude)");
+                    }
+                    return Ok(());
+                }
+                unknown => bail!("Tùy chọn không hợp lệ: '{}'", unknown),
+            }
+        }
+
+        let client = ApiClient::new();
+        client.refresh_quota(agent_filter).await?;
+        if let Some(agent) = agent_filter {
+            println!("✓ Đã gửi yêu cầu làm mới hạn ngạch cho {}.", agent.name());
+        } else {
+            println!("✓ Đã gửi yêu cầu làm mới hạn ngạch cho toàn bộ agent.");
+        }
+        Ok(())
+    }
+
+    async fn handle_preference(args: &[String]) -> Result<()> {
+        let mut new_pref = None;
+        let mut iter = args.iter();
+        while let Some(arg) = iter.next() {
+            match arg.as_str() {
+                "-h" | "--help" => {
+                    println!("Cách sử dụng: aam agy preference [auto | gemini | claude_gpt]");
+                    println!();
+                    println!("Tùy chọn giá trị:");
+                    println!("  auto        Tự động chọn tài khoản theo mô hình vừa dùng gần nhất");
+                    println!("  gemini      Luôn ưu tiên tài khoản có hạn ngạch Gemini cao nhất");
+                    println!("  claude_gpt  Luôn ưu tiên tài khoản có hạn ngạch Claude & GPT cao nhất");
+                    return Ok(());
+                }
+                val if !val.starts_with('-') && new_pref.is_none() => {
+                    new_pref = Some(val);
+                }
+                unknown => bail!("Tùy chọn không hợp lệ: '{}'", unknown),
+            }
+        }
+
+        let client = ApiClient::new();
+        if let Some(pref) = new_pref {
+            let updated = client.set_preference(pref).await?;
+            let name = match updated.preference.as_str() {
+                "auto" => "Tự động (theo mô hình vừa dùng)",
+                "gemini" => "Luôn ưu tiên Gemini",
+                "claude_gpt" => "Luôn ưu tiên Claude & GPT",
+                other => other,
+            };
+            println!("✓ Đã cập nhật ưu tiên định tuyến thành: {}", name);
+        } else {
+            let state = client.get_preference().await?;
+            let name = match state.preference.as_str() {
+                "auto" => "Tự động (theo mô hình vừa dùng)",
+                "gemini" => "Luôn ưu tiên Gemini",
+                "claude_gpt" => "Luôn ưu tiên Claude & GPT",
+                other => other,
+            };
+            println!("Cấu hình định tuyến mô hình (Antigravity):");
+            println!("  • Chế độ ưu tiên:     {}", name);
+            println!("  • Mô hình phát hiện:  {}", state.detected_category);
+            println!("  • Nguồn phát hiện:    {}", state.last_detected_source);
+            println!();
+            println!("Thay đổi cấu hình: aam agy preference [auto | gemini | claude_gpt]");
+        }
+        Ok(())
+    }
+
+    async fn handle_auto_select(scoped_agent: Option<Agent>, args: &[String]) -> Result<()> {
+        let mut agent = scoped_agent.unwrap_or(Agent::Antigravity);
+        let mut iter = args.iter();
+
+        while let Some(arg) = iter.next() {
+            match arg.as_str() {
+                "-a" | "--agent" => {
+                    if let Some(val) = iter.next() {
+                        agent = Self::parse_agent(val)?;
+                    } else {
+                        bail!("Thiếu tên agent sau tùy chọn -a / --agent");
+                    }
+                }
+                "-h" | "--help" => {
+                    let prefix = match scoped_agent {
+                        Some(Agent::Antigravity) => "aam agy",
+                        Some(Agent::Codex) => "aam codex",
+                        Some(Agent::Claude) => "aam claude",
+                        None => "aam",
+                    };
+                    println!("Cách sử dụng: {} auto-select [tùy chọn]", prefix);
+                    println!();
+                    println!("Tùy chọn:");
+                    if scoped_agent.is_none() {
+                        println!("  -a, --agent <agent>   Chỉ định agent (mặc định: antigravity)");
+                    }
+                    return Ok(());
+                }
+                unknown => bail!("Tùy chọn không hợp lệ: '{}'", unknown),
+            }
+        }
+
+        let client = ApiClient::new();
+        let msg = client.auto_select(agent).await?;
+        println!("✓ {}", msg);
+        Ok(())
+    }
+
+    async fn handle_delete(scoped_agent: Option<Agent>, args: &[String]) -> Result<()> {
+        let mut target = None;
+        let mut agent_filter = scoped_agent;
+        let mut auto_confirm = false;
+        let mut iter = args.iter();
+
+        while let Some(arg) = iter.next() {
+            match arg.as_str() {
+                "-a" | "--agent" => {
+                    if let Some(val) = iter.next() {
+                        agent_filter = Some(Self::parse_agent(val)?);
+                    } else {
+                        bail!("Thiếu tên agent sau tùy chọn -a / --agent");
+                    }
+                }
+                "-y" | "--yes" => auto_confirm = true,
+                "-h" | "--help" => {
+                    let prefix = match scoped_agent {
+                        Some(Agent::Antigravity) => "aam agy",
+                        Some(Agent::Codex) => "aam codex",
+                        Some(Agent::Claude) => "aam claude",
+                        None => "aam",
+                    };
+                    println!("Cách sử dụng: {} delete <# | ID | email> [tùy chọn]", prefix);
+                    println!();
+                    println!("Tùy chọn:");
+                    if scoped_agent.is_none() {
+                        println!("  -a, --agent <agent>   Chỉ định agent");
+                    }
+                    println!("  -y, --yes             Bỏ qua xác nhận xóa");
+                    return Ok(());
+                }
+                val if !val.starts_with('-') && target.is_none() => {
+                    target = Some(val.to_string());
+                }
+                unknown => bail!("Tùy chọn không hợp lệ: '{}'", unknown),
+            }
+        }
+
+        let Some(target) = target else {
+            let prefix = match scoped_agent {
+                Some(Agent::Antigravity) => "aam agy",
+                Some(Agent::Codex) => "aam codex",
+                Some(Agent::Claude) => "aam claude",
+                None => "aam",
+            };
+            bail!("Thiếu định danh tài khoản cần xóa. Cách dùng: {} delete <# | ID | email>", prefix);
+        };
+
+        let client = ApiClient::new();
+        let accounts = if let Some(agent) = agent_filter {
+            client.list_accounts_for_agent(agent).await?
+        } else {
+            client.list_all_accounts().await?
+        };
+
+        let matched = Self::find_account(&accounts, &target)?;
+
+        if !auto_confirm {
+            print!("Bạn có chắc chắn muốn xóa tài khoản {} ({})? [y/N]: ", matched.email, matched.agent.name());
+            std::io::stdout().flush()?;
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            let trimmed = input.trim().to_lowercase();
+            if trimmed != "y" && trimmed != "yes" {
+                println!("Đã hủy thao tác xóa tài khoản.");
+                return Ok(());
+            }
+        }
+
+        client.delete_account(matched.agent, &matched.id).await?;
+        println!("✓ Đã xóa tài khoản {} ({}) thành công.", matched.email, matched.agent.name());
+        Ok(())
+    }
+
+    async fn handle_settings(scoped_agent: Option<Agent>, args: &[String]) -> Result<()> {
+        let mut agent_filter = scoped_agent;
+        let mut toggle = None;
+        let mut iter = args.iter();
+
+        while let Some(arg) = iter.next() {
+            match arg.as_str() {
+                "-a" | "--agent" => {
+                    if let Some(val) = iter.next() {
+                        agent_filter = Some(Self::parse_agent(val)?);
+                    } else {
+                        bail!("Thiếu tên agent sau tùy chọn -a / --agent");
+                    }
+                }
+                "--enable" => toggle = Some(true),
+                "--disable" => toggle = Some(false),
+                "-h" | "--help" => {
+                    let prefix = match scoped_agent {
+                        Some(Agent::Antigravity) => "aam agy",
+                        Some(Agent::Codex) => "aam codex",
+                        Some(Agent::Claude) => "aam claude",
+                        None => "aam",
+                    };
+                    println!("Cách sử dụng: {} settings [tùy chọn]", prefix);
+                    println!();
+                    println!("Tùy chọn:");
+                    if scoped_agent.is_none() {
+                        println!("  -a, --agent <agent>   Chỉ định agent (antigravity, codex, claude)");
+                    }
+                    println!("  --enable              Bật tự động chọn tài khoản cho agent");
+                    println!("  --disable             Tắt tự động chọn tài khoản cho agent");
+                    return Ok(());
+                }
+                unknown => bail!("Tùy chọn không hợp lệ: '{}'", unknown),
+            }
+        }
+
+        let client = ApiClient::new();
+        if let Some(enabled) = toggle {
+            let agent = agent_filter.unwrap_or(Agent::Antigravity);
+            client.set_agent_setting(agent, enabled).await?;
+            let state_str = if enabled { "bật" } else { "tắt" };
+            println!("✓ Đã {} chế độ tự động chọn tài khoản cho {}.", state_str, agent.name());
+        } else if let Some(agent) = agent_filter {
+            let flags = client.get_agent_settings().await?;
+            let is_enabled = flags.is_enabled(agent);
+            println!("Cài đặt tự động chọn tài khoản cho {}:", agent.name());
+            println!("  • Trạng thái: {}", if is_enabled { "Bật" } else { "Tắt" });
+            println!();
+            let alias = match agent {
+                Agent::Antigravity => "agy",
+                Agent::Codex => "codex",
+                Agent::Claude => "claude",
+            };
+            println!("Thay đổi cài đặt: aam {} settings [--enable | --disable]", alias);
+        } else {
+            let flags = client.get_agent_settings().await?;
+            println!("Cài đặt tự động chọn tài khoản (auto-selection):");
+            println!("  • Antigravity:  {}", if flags.antigravity { "Bật" } else { "Tắt" });
+            println!("  • Codex:        {}", if flags.codex { "Bật" } else { "Tắt" });
+            println!("  • Claude:       {}", if flags.claude { "Bật" } else { "Tắt" });
+            println!();
+            println!("Thay đổi cấu hình: aam <agent> settings [--enable | --disable]");
+        }
+        Ok(())
+    }
+
+    async fn handle_add(scoped_agent: Option<Agent>, args: &[String]) -> Result<()> {
+        let mut agent = scoped_agent.unwrap_or(Agent::Antigravity);
+        let mut email = None;
+        let mut access_token = None;
+        let mut refresh_token = None;
+        let mut id_token = None;
+        let mut expires_in = None;
+        let mut iter = args.iter();
+
+        while let Some(arg) = iter.next() {
+            match arg.as_str() {
+                "-a" | "--agent" => {
+                    if let Some(val) = iter.next() {
+                        agent = Self::parse_agent(val)?;
+                    }
+                }
+                "--email" => email = iter.next().cloned(),
+                "--access-token" | "--token" => access_token = iter.next().cloned(),
+                "--refresh-token" => refresh_token = iter.next().cloned(),
+                "--id-token" => id_token = iter.next().cloned(),
+                "--expires-in" => {
+                    if let Some(val) = iter.next() {
+                        expires_in = val.parse::<i64>().ok();
+                    }
+                }
+                "-h" | "--help" => {
+                    let prefix = match scoped_agent {
+                        Some(Agent::Antigravity) => "aam agy",
+                        Some(Agent::Codex) => "aam codex",
+                        Some(Agent::Claude) => "aam claude",
+                        None => "aam",
+                    };
+                    match agent {
+                        Agent::Antigravity => {
+                            println!("Cách sử dụng: {} add --email <email> --access-token <token> [tùy chọn]", prefix);
+                            println!();
+                            println!("Tùy chọn:");
+                            println!("  --email <email>             Email tài khoản Google");
+                            println!("  --access-token <token>      Access token");
+                            println!("  --refresh-token <token>     Refresh token");
+                            println!("  --expires-in <giây>         Thời gian hiệu lực của token");
+                        }
+                        Agent::Codex => {
+                            println!("Cách sử dụng: {} add --email <email> --token <token> [tùy chọn]", prefix);
+                            println!();
+                            println!("Tùy chọn:");
+                            println!("  --email <email>             Email tài khoản Codex");
+                            println!("  --token <token>             Access token hoặc API key");
+                            println!("  --id-token <token>          ID token (tùy chọn)");
+                        }
+                        Agent::Claude => {
+                            println!("Cách sử dụng: {} add --email <email> --token <token>", prefix);
+                            println!();
+                            println!("Tùy chọn:");
+                            println!("  --email <email>             Email hoặc định danh tài khoản");
+                            println!("  --token <token>             Session token của Claude Code");
+                        }
+                    }
+                    return Ok(());
+                }
+                unknown => bail!("Tùy chọn không hợp lệ: '{}'", unknown),
+            }
+        }
+
+        let Some(email) = email else {
+            bail!("Thiếu email tài khoản (--email)");
+        };
+
+        let client = ApiClient::new();
+        match agent {
+            Agent::Antigravity => {
+                let Some(token) = access_token else {
+                    bail!("Thiếu access token (--access-token)");
+                };
+                client
+                    .add_antigravity_account(
+                        &email,
+                        &token,
+                        refresh_token.as_deref(),
+                        expires_in,
+                    )
+                    .await?;
+                println!("✓ Đã thêm tài khoản Antigravity {} thành công.", email);
+            }
+            Agent::Codex => {
+                let Some(token) = access_token else {
+                    bail!("Thiếu token (--token)");
+                };
+                let mut creds_map = serde_json::Map::new();
+                creds_map.insert("token".to_string(), serde_json::json!(token));
+                if let Some(id_tok) = id_token {
+                    creds_map.insert("id_token".to_string(), serde_json::json!(id_tok));
+                }
+                client.import_native_account(Agent::Codex, &email, Some(serde_json::Value::Object(creds_map))).await?;
+                println!("✓ Đã thêm tài khoản Codex {} thành công.", email);
+            }
+            Agent::Claude => {
+                let Some(token) = access_token else {
+                    bail!("Thiếu token (--token)");
+                };
+                let mut creds_map = serde_json::Map::new();
+                creds_map.insert("token".to_string(), serde_json::json!(token));
+                client.import_native_account(Agent::Claude, &email, Some(serde_json::Value::Object(creds_map))).await?;
+                println!("✓ Đã thêm tài khoản Claude {} thành công.", email);
+            }
+        }
+        Ok(())
+    }
+
+    async fn handle_import(scoped_agent: Option<Agent>, args: &[String]) -> Result<()> {
+        let mut agent = scoped_agent;
+        let mut email = None;
+        let mut token = None;
+        let mut iter = args.iter();
+
+        while let Some(arg) = iter.next() {
+            match arg.as_str() {
+                "-a" | "--agent" => {
+                    if let Some(val) = iter.next() {
+                        let a = Self::parse_agent(val)?;
+                        if a == Agent::Antigravity {
+                            bail!("Lệnh import chỉ dành cho Codex và Claude. Đối với Antigravity, vui lòng dùng 'aam agy add' hoặc 'aam agy login'.");
+                        }
+                        agent = Some(a);
+                    }
+                }
+                "--email" => email = iter.next().cloned(),
+                "--token" => token = iter.next().cloned(),
+                "-h" | "--help" => {
+                    let prefix = match scoped_agent {
+                        Some(Agent::Codex) => "aam codex",
+                        Some(Agent::Claude) => "aam claude",
+                        _ => "aam",
+                    };
+                    println!("Cách sử dụng: {} import [--email <email>] [--token <token>]", prefix);
+                    println!();
+                    println!("Ghi chú: Nếu không truyền --token, hệ thống sẽ tự động nhập phiên đăng nhập hiện tại từ CLI cục bộ.");
+                    return Ok(());
+                }
+                unknown => bail!("Tùy chọn không hợp lệ: '{}'", unknown),
+            }
+        }
+
+        let Some(agent) = agent else {
+            bail!("Thiếu agent cần import (-a codex hoặc -a claude)");
+        };
+
+        if agent == Agent::Antigravity {
+            bail!("Lệnh import chỉ dành cho Codex và Claude. Đối với Antigravity, vui lòng dùng 'aam agy add' hoặc 'aam agy login'.");
+        }
+
+        let email = match email {
+            Some(e) => e,
+            None => format!("{}-local", agent.name().to_lowercase()),
+        };
+
+        let creds = token.map(|t| serde_json::json!({ "token": t }));
+        let client = ApiClient::new();
+        client.import_native_account(agent, &email, creds).await?;
+        println!("✓ Đã nhập tài khoản {} cho {} thành công.", email, agent.name());
+        Ok(())
+    }
+
+    async fn handle_login(scoped_agent: Option<Agent>, args: &[String]) -> Result<()> {
+        let mut agent = scoped_agent.unwrap_or(Agent::Antigravity);
+        let mut iter = args.iter();
+
+        while let Some(arg) = iter.next() {
+            match arg.as_str() {
+                "-a" | "--agent" => {
+                    if let Some(val) = iter.next() {
+                        agent = Self::parse_agent(val)?;
+                    }
+                }
+                "-h" | "--help" => {
+                    let prefix = match scoped_agent {
+                        Some(Agent::Antigravity) => "aam agy",
+                        Some(Agent::Codex) => "aam codex",
+                        Some(Agent::Claude) => "aam claude",
+                        None => "aam",
+                    };
+                    println!("Cách sử dụng: {} login [tùy chọn]", prefix);
+                    println!();
+                    println!("Tùy chọn:");
+                    if scoped_agent.is_none() {
+                        println!("  -a, --agent <agent>   Chỉ định agent (antigravity, codex)");
+                    }
+                    return Ok(());
+                }
+                unknown => bail!("Tùy chọn không hợp lệ: '{}'", unknown),
+            }
+        }
+
+        let client = ApiClient::new();
+        match agent {
+            Agent::Antigravity => {
+                println!("[aam] Đang khởi tạo phiên xác thực Google OAuth...");
+                let auth_url = client.start_oauth_flow().await?;
+                println!("Vui lòng mở liên kết sau trên trình duyệt để hoàn tất đăng nhập:\n");
+                println!("  {}\n", auth_url);
+                let _ = Self::open_url(&auth_url);
+                println!("Sau khi cấp quyền thành công, tài khoản sẽ tự động được lưu vào aam.");
+            }
+            Agent::Codex => {
+                println!("[aam] Đang khởi tạo phiên xác thực Codex...");
+                let status = client.start_codex_login().await?;
+                if let Some(auth_url) = status.auth_url {
+                    println!("Vui lòng mở liên kết sau để xác thực:\n  {}\n", auth_url);
+                    let _ = Self::open_url(&auth_url);
+                }
+                println!("Đang chờ xác nhận từ trình duyệt (nhấn Ctrl+C để hủy)...");
+                for _ in 0..120 {
+                    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                    if let Ok(Some(current)) = client.get_codex_login_status().await {
+                        if current.status == "completed" {
+                            println!("\n✓ Đăng nhập Codex thành công!");
+                            return Ok(());
+                        } else if current.status == "failed" {
+                            bail!("\n✗ Đăng nhập Codex thất bại: {}", current.message);
+                        }
+                    }
+                }
+                bail!("\nHết thời gian chờ đăng nhập Codex (timeout)");
+            }
+            Agent::Claude => {
+                println!("Claude không hỗ trợ đăng nhập OAuth trực tiếp qua CLI.");
+                println!("Vui lòng đăng nhập qua CLI của Claude hoặc dùng lệnh 'aam claude import'.");
+            }
+        }
+        Ok(())
+    }
+
+    async fn handle_reset() -> Result<()> {
+        let client = ApiClient::new();
+        client.reset_cooldowns().await?;
+        println!("✓ Đã đặt lại thời gian chờ cho các tài khoản Antigravity.");
+        Ok(())
+    }
+
+    pub fn parse_agent(val: &str) -> Result<Agent> {
+        match val.to_lowercase().as_str() {
+            "antigravity" | "anti" | "ag" | "agy" => Ok(Agent::Antigravity),
+            "codex" => Ok(Agent::Codex),
+            "claude" => Ok(Agent::Claude),
+            _ => bail!("Tên agent không hợp lệ: '{}'. Chỉ chấp nhận: antigravity (agy), codex, claude", val),
+        }
+    }
+
+    fn find_account<'a>(accounts: &'a [UnifiedAccountDto], target: &str) -> Result<&'a UnifiedAccountDto> {
+        if let Ok(idx) = target.parse::<usize>() {
+            if idx >= 1 && idx <= accounts.len() {
+                return Ok(&accounts[idx - 1]);
+            }
+        }
+
+        let target_lower = target.to_lowercase();
+        if let Some(acc) = accounts.iter().find(|a| a.id == target) {
+            return Ok(acc);
+        }
+        if let Some(acc) = accounts.iter().find(|a| a.email.to_lowercase() == target_lower) {
+            return Ok(acc);
+        }
+        let id_matches: Vec<_> = accounts.iter().filter(|a| a.id.starts_with(target)).collect();
+        if id_matches.len() == 1 {
+            return Ok(id_matches[0]);
+        }
+        let email_matches: Vec<_> = accounts.iter().filter(|a| a.email.to_lowercase().contains(&target_lower)).collect();
+        if email_matches.len() == 1 {
+            return Ok(email_matches[0]);
+        }
+
+        if id_matches.len() > 1 || email_matches.len() > 1 {
+            bail!("Có nhiều tài khoản khớp với '{}'. Vui lòng dùng số thứ tự (#) hoặc ID đầy đủ.", target);
+        }
+
+        bail!("Không tìm thấy tài khoản phù hợp với '{}'. Gõ 'aam list' để xem danh sách.", target);
+    }
+
+    pub fn open_url(url: &str) -> Result<()> {
+        #[cfg(target_os = "linux")]
+        {
+            let _ = Command::new("xdg-open")
+                .arg(url)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn();
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let _ = Command::new("open")
+                .arg(url)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn();
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let _ = Command::new("cmd")
+                .args(["/C", "start", "", url])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn();
+        }
+        Ok(())
+    }
+
+    pub fn truncate_str(s: &str, max_chars: usize) -> String {
+        let char_count = s.chars().count();
+        if char_count > max_chars {
+            let truncated: String = s.chars().take(max_chars.saturating_sub(3)).collect();
+            format!("{}...", truncated)
+        } else {
+            s.to_string()
+        }
+    }
+
     fn print_help() {
         println!("Agent Account Manager CLI (aam)");
         println!();
         println!("Cách sử dụng:");
-        println!("  aam                    Tự động bật dịch vụ (nếu chưa chạy) và mở giao diện web");
-        println!("  aam update             Cập nhật aam lên phiên bản mới nhất từ GitHub");
-        println!("  aam start              Khởi chạy dịch vụ chạy ngầm");
-        println!("  aam autostart          Bật tự động chạy liên tục cùng hệ thống (kể cả restart máy)");
-        println!("  aam stop               Dừng dịch vụ đang chạy");
-        println!("  aam restart            Khởi động lại dịch vụ");
-        println!("  aam status             Xem trạng thái hoạt động của dịch vụ");
-        println!("  aam version            Xem phiên bản hiện tại");
-        println!("  aam disable            Tắt chế độ tự khởi động cùng máy");
-        println!("  aam install            Cài đặt lệnh aam vào ~/.local/bin");
-        println!("  aam reinstall          Cài đặt lại binary và thiết lập liên kết lệnh");
-        println!("  aam uninstall [tùy_chọn]  Gỡ cài đặt aam khỏi hệ thống");
-        println!("  aam run                Chạy trực tiếp trên terminal hiện tại (foreground)");
+        println!("  aam [lệnh_chung] [tùy_chọn]");
+        println!("  aam <agent> <lệnh_con> [tùy_chọn]");
         println!();
-        println!("Tùy chọn gỡ cài đặt (aam uninstall):");
-        println!("  --purge, -p            Xóa toàn bộ thư mục dữ liệu cấu hình và tài khoản");
-        println!("  --keep-data            Giữ lại thư mục dữ liệu cấu hình mà không cần hỏi lại");
+        println!("Quản lý theo từng agent:");
+        println!("  aam agy [lệnh]        Quản lý tài khoản Antigravity (viết tắt: agy, antigravity, anti, ag)");
+        println!("  aam codex [lệnh]      Quản lý tài khoản OpenAI Codex CLI");
+        println!("  aam claude [lệnh]     Quản lý tài khoản Claude Code CLI");
+        println!();
+        println!("Các lệnh con cho từng agent (ví dụ: aam codex list, aam agy switch 1):");
+        println!("  list, ls              Xem danh sách tài khoản của agent (--active, --json)");
+        println!("  switch <# | ID>       Chuyển tài khoản đang hoạt động của agent");
+        println!("  refresh               Làm mới hạn ngạch của agent");
+        println!("  auto-select           Tự động chọn tài khoản tối ưu cho agent");
+        println!("  settings              Xem hoặc cấu hình tự động chọn (--enable/--disable)");
+        println!("  login                 Đăng nhập tài khoản mới (agy: Google OAuth, codex: Device OAuth)");
+        println!("  import                Nhập tài khoản từ CLI cục bộ (codex, claude)");
+        println!("  add                   Thêm tài khoản thủ công bằng token");
+        println!("  delete <# | ID>       Xóa tài khoản của agent (-y)");
+        println!("  preference            Xem hoặc đổi cấu hình ưu tiên mô hình (chỉ dành cho Antigravity)");
+        println!("  reset                 Đặt lại thời gian chờ (cooldowns) cho Antigravity");
+        println!();
+        println!("Kiểm tra và thao tác chung (toàn bộ agent):");
+        println!("  aam                   Xem bảng danh sách tài khoản toàn bộ agent (tương đương 'aam list')");
+        println!("  aam check             Kiểm tra tổng quan trạng thái dịch vụ và tài khoản các agent");
+        println!("  aam list              Xem bảng danh sách tài khoản của toàn bộ agent");
+        println!("  aam switch <# | ID>   Chuyển tài khoản đang hoạt động");
+        println!("  aam refresh           Làm mới hạn ngạch cho toàn bộ agent");
+        println!("  aam tui               Mở giao diện terminal tương tác toàn màn hình");
+        println!("  aam web               Mở bảng điều khiển web trên trình duyệt (hoặc 'aam open')");
+        println!();
+        println!("Quản lý dịch vụ hệ thống:");
+        println!("  aam start             Khởi chạy dịch vụ chạy ngầm");
+        println!("  aam stop              Dừng dịch vụ đang chạy");
+        println!("  aam restart           Khởi động lại dịch vụ");
+        println!("  aam status            Xem trạng thái hoạt động của dịch vụ");
+        println!("  aam autostart         Bật tự động chạy liên tục cùng hệ thống (systemd)");
+        println!("  aam disable           Tắt chế độ tự khởi động cùng máy");
+        println!("  aam update            Cập nhật aam lên phiên bản mới nhất từ GitHub");
+        println!("  aam version           Xem phiên bản hiện tại");
         println!();
     }
 }
@@ -1067,5 +2249,86 @@ mod tests {
         let keep_args = vec!["aam".to_string(), "uninstall".to_string(), "--keep-data".to_string()];
         let is_keep = keep_args.iter().skip(2).any(|arg| arg == "--keep-data" || arg == "--no-purge");
         assert!(is_keep);
+    }
+
+    #[test]
+    fn parses_agent_names_correctly() {
+        use crate::proxy::selection::Agent;
+        assert_eq!(Cli::parse_agent("antigravity").unwrap(), Agent::Antigravity);
+        assert_eq!(Cli::parse_agent("agy").unwrap(), Agent::Antigravity);
+        assert_eq!(Cli::parse_agent("anti").unwrap(), Agent::Antigravity);
+        assert_eq!(Cli::parse_agent("ag").unwrap(), Agent::Antigravity);
+        assert_eq!(Cli::parse_agent("codex").unwrap(), Agent::Codex);
+        assert_eq!(Cli::parse_agent("claude").unwrap(), Agent::Claude);
+        assert!(Cli::parse_agent("unknown").is_err());
+    }
+
+    #[test]
+    fn finds_account_by_index_id_or_email() {
+        use crate::client::UnifiedAccountDto;
+        use crate::proxy::selection::Agent;
+
+        let accounts = vec![
+            UnifiedAccountDto {
+                id: "11112222-3333-4444-5555-666677778888".to_string(),
+                agent: Agent::Antigravity,
+                email: "alpha@gmail.com".to_string(),
+                is_active: true,
+                quota_percentage: Some(90.0),
+                quota_groups: vec![],
+                checked_at: None,
+                status: "Sẵn sàng".to_string(),
+                error: None,
+            },
+            UnifiedAccountDto {
+                id: "aaaa2222-3333-4444-5555-666677778888".to_string(),
+                agent: Agent::Codex,
+                email: "beta@company.com".to_string(),
+                is_active: false,
+                quota_percentage: Some(75.0),
+                quota_groups: vec![],
+                checked_at: None,
+                status: "Sẵn sàng".to_string(),
+                error: None,
+            },
+        ];
+
+        // 1. By index (#)
+        assert_eq!(Cli::find_account(&accounts, "1").unwrap().email, "alpha@gmail.com");
+        assert_eq!(Cli::find_account(&accounts, "2").unwrap().email, "beta@company.com");
+
+        // 2. By exact email
+        assert_eq!(Cli::find_account(&accounts, "alpha@gmail.com").unwrap().id, "11112222-3333-4444-5555-666677778888");
+
+        // 3. By email substring
+        assert_eq!(Cli::find_account(&accounts, "beta").unwrap().email, "beta@company.com");
+
+        // 4. By ID prefix
+        assert_eq!(Cli::find_account(&accounts, "11112222").unwrap().email, "alpha@gmail.com");
+        assert_eq!(Cli::find_account(&accounts, "aaaa2222").unwrap().email, "beta@company.com");
+
+        // 5. Not found
+        assert!(Cli::find_account(&accounts, "nonexistent").is_err());
+        assert!(Cli::find_account(&accounts, "99").is_err());
+    }
+
+    #[tokio::test]
+    async fn routes_agent_commands_correctly() {
+        // Agent help routes
+        let res = Cli::handle_args(&["aam".to_string(), "agy".to_string(), "help".to_string()]).await;
+        assert!(matches!(res, Some(Ok(()))));
+
+        let res = Cli::handle_args(&["aam".to_string(), "codex".to_string(), "help".to_string()]).await;
+        assert!(matches!(res, Some(Ok(()))));
+
+        let res = Cli::handle_args(&["aam".to_string(), "claude".to_string(), "help".to_string()]).await;
+        assert!(matches!(res, Some(Ok(()))));
+
+        // General help and version routes
+        let res = Cli::handle_args(&["aam".to_string(), "help".to_string()]).await;
+        assert!(matches!(res, Some(Ok(()))));
+
+        let res = Cli::handle_args(&["aam".to_string(), "version".to_string()]).await;
+        assert!(matches!(res, Some(Ok(()))));
     }
 }

@@ -1,10 +1,12 @@
 mod cli;
+mod client;
 mod config;
 mod device;
 mod models;
 mod oauth;
 mod proxy;
 mod storage;
+mod tui;
 
 use cli::Cli;
 use config::Config;
@@ -15,7 +17,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 #[tokio::main(worker_threads = 2)]
 async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    if let Some(res) = Cli::handle_args(&args) {
+    if let Some(res) = Cli::handle_args(&args).await {
         return res;
     }
     // 1. Initialize colorful terminal logging subscriber

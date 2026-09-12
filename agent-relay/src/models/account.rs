@@ -31,6 +31,39 @@ impl QuotaBucketInfo {
         let w = self.window.to_uppercase();
         w.contains("5H") || w.contains("FIVE") || w.contains("5_HOUR")
     }
+
+    pub fn reset_countdown(&self) -> Option<String> {
+        let reset_str = self.reset_time.as_ref()?;
+        let now = Utc::now();
+        let reset_dt = chrono::DateTime::parse_from_rfc3339(reset_str)
+            .map(|dt| dt.with_timezone(&Utc))
+            .or_else(|_| reset_str.parse::<DateTime<Utc>>())
+            .ok()?;
+
+        let diff = reset_dt.signed_duration_since(now);
+        let total_seconds = diff.num_seconds();
+        if total_seconds <= 0 {
+            return Some("đã đến giờ".to_string());
+        }
+
+        let total_minutes = ((total_seconds + 30) / 60).max(1);
+        let days = total_minutes / (24 * 60);
+        let hours = (total_minutes % (24 * 60)) / 60;
+        let mins = total_minutes % 60;
+
+        let formatted = if days > 0 {
+            format!("~{}d", days)
+        } else if hours > 0 {
+            if mins > 0 {
+                format!("~{}h {}m", hours, mins)
+            } else {
+                format!("~{}h", hours)
+            }
+        } else {
+            format!("~{}m", mins)
+        };
+        Some(formatted)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -252,6 +285,40 @@ mod tests {
             reset_time: Some(past_time),
         };
         assert_eq!(bucket_past_reset.effective_percentage(), 100.0);
+    }
+
+    #[test]
+    fn test_quota_bucket_reset_countdown() {
+        let bucket_none = QuotaBucketInfo {
+            window: "FIVE_HOUR".to_string(),
+            remaining_percentage: 0.0,
+            reset_time: None,
+        };
+        assert_eq!(bucket_none.reset_countdown(), None);
+
+        let past = (Utc::now() - chrono::Duration::seconds(10)).to_rfc3339();
+        let bucket_past = QuotaBucketInfo {
+            window: "FIVE_HOUR".to_string(),
+            remaining_percentage: 0.0,
+            reset_time: Some(past),
+        };
+        assert_eq!(bucket_past.reset_countdown(), Some("đã đến giờ".to_string()));
+
+        let future_hours = (Utc::now() + chrono::Duration::minutes(135)).to_rfc3339();
+        let bucket_hours = QuotaBucketInfo {
+            window: "FIVE_HOUR".to_string(),
+            remaining_percentage: 0.0,
+            reset_time: Some(future_hours),
+        };
+        assert_eq!(bucket_hours.reset_countdown(), Some("~2h 15m".to_string()));
+
+        let future_days = (Utc::now() + chrono::Duration::hours(150)).to_rfc3339();
+        let bucket_days = QuotaBucketInfo {
+            window: "WEEKLY".to_string(),
+            remaining_percentage: 60.0,
+            reset_time: Some(future_days),
+        };
+        assert_eq!(bucket_days.reset_countdown(), Some("~6d".to_string()));
     }
 
     #[test]

@@ -16,8 +16,10 @@ Công cụ quản lý đa tài khoản và điều phối hạn ngạch thông m
 ## Tính năng nổi bật
 
 - **Hỗ trợ đa agent**: Quản lý nhiều tài khoản và hạn ngạch tập trung cho Antigravity, Claude Code và Codex trong cùng một nơi.
-- **Chuyển đổi tài khoản tức thì**: Đổi tài khoản hoạt động nhanh chóng qua giao diện mà không cần sao chép thủ công thông tin đăng nhập.
-- **Tự động chọn tài khoản thông minh**: Tự động nhận diện và chuyển sang tài khoản còn nhiều hạn ngạch nhất khi tài khoản hiện tại sắp hết mức sử dụng.
+- **Giao diện terminal tương tác toàn màn hình (TUI)**: Theo dõi trạng thái, hạn ngạch real-time và thao tác phím tắt nhanh trực tiếp trên terminal với lệnh `aam tui`.
+- **Thao tác nhanh qua dòng lệnh (CLI)**: Đầy đủ các lệnh quản lý tài khoản, chuyển đổi, làm mới, lọc theo agent và cấu hình định tuyến ngay trên terminal (`aam list`, `aam switch`, `aam preference`...).
+- **Chuyển đổi tài khoản tức thì**: Đổi tài khoản hoạt động nhanh chóng qua giao diện web, TUI hoặc CLI mà không cần sao chép thủ công thông tin đăng nhập.
+- **Tự động chọn tài khoản thông minh**: Tự động nhận diện mô hình đang dùng và chuyển sang tài khoản có hạn ngạch cao nhất khi mức sử dụng sắp hết.
 - **Theo dõi hạn ngạch trực quan**: Cập nhật liên tục số lượng yêu cầu còn lại, giới hạn sử dụng và thời gian đặt lại hạn ngạch của từng tài khoản.
 - **Không can thiệp môi trường hệ thống**: Hoạt động nền độc lập, không sửa đổi các tệp cấu hình shell (`.bashrc`, `.zshrc`) và không tạo alias phức tạp.
 - **Bảng điều khiển web cục bộ**: Giao diện tối giản, trực quan, hỗ trợ chế độ tối tại địa chỉ `http://127.0.0.1:8045`.
@@ -96,7 +98,100 @@ Kịch bản sẽ tự động tải bản phát hành phù hợp với hệ đi
   aam uninstall --purge
   ```
 
-### 3. Kịch bản gỡ cài đặt nhanh
+### 3. Giao diện trực quan và kiểm tra tổng quan
+
+- **Xem danh sách tài khoản (mặc định khi chạy `aam`):**
+  ```bash
+  aam                         # Xem danh sách tài khoản toàn bộ agent (tương đương 'aam list')
+  # Hoặc lọc theo điều kiện:
+  aam list --active           # Chỉ hiển thị tài khoản đang hoạt động
+  ```
+
+- **Kiểm tra tổng quan hệ thống:**
+  ```bash
+  aam check                   # Kiểm tra nhanh trạng thái dịch vụ, số tài khoản, hạn ngạch của tất cả agent
+  # Hoặc alias:
+  aam overview
+  ```
+
+- **Mở bảng điều khiển web:**
+  ```bash
+  aam web                     # Mở bảng điều khiển web trên trình duyệt mặc định (hoặc 'aam open')
+  ```
+
+- **Giao diện terminal tương tác toàn màn hình (`aam tui`):**
+  ```bash
+  aam tui
+  ```
+
+  Các phím tắt chính trong giao diện TUI:
+  - `Tab` hoặc `1`, `2`, `3`: Chuyển đổi giữa các agent (Antigravity, Codex, Claude).
+  - `↑` / `↓` hoặc `j` / `k`: Di chuyển và chọn tài khoản trong danh sách.
+  - `Enter` hoặc `s`: Chuyển sang tài khoản đang chọn (đồng bộ ngay vào OS Keyring và IDE database).
+  - `+` hoặc `n`: Mở menu thêm tài khoản mới (Google OAuth cho Antigravity, Device OAuth cho Codex, import cho Claude, hoặc nhập thủ công).
+  - `r`: Làm mới dữ liệu hạn ngạch ngay lập tức.
+  - `p`: Đổi chế độ ưu tiên định tuyến (Auto -> Gemini -> Claude & GPT).
+  - `a`: Tự động chọn tài khoản có hạn ngạch cao nhất.
+  - `t`: Bật/tắt chế độ tự động chọn tài khoản cho agent hiện tại.
+  - `d`: Xóa tài khoản đang chọn (có hộp thoại xác nhận `y`/`n`).
+  - `w`: Mở nhanh giao diện web trên trình duyệt mặc định.
+  - `q` hoặc `Esc`: Thoát giao diện TUI.
+
+### 4. Cấu trúc lệnh phân cấp theo từng agent (`aam <agent> <lệnh_con>`)
+
+Tổ chức lệnh gọn gàng, rõ ràng theo từng agent với các bí danh ngắn (`agy`, `codex`, `claude`):
+
+- **Quản lý tài khoản Antigravity (`aam agy`):**
+  ```bash
+  aam agy                     # Xem nhanh danh sách tài khoản Antigravity
+  aam agy list                # Xem danh sách kèm tùy chọn (--active, --json)
+  aam agy switch 1            # Chuyển tài khoản #1 của Antigravity
+  aam agy login               # Đăng nhập Google OAuth qua trình duyệt
+  aam agy add --email <email> --access-token <token>  # Thêm tài khoản thủ công
+  aam agy preference auto     # Đổi chế độ ưu tiên mô hình (auto | gemini | claude_gpt)
+  aam agy auto-select         # Tự động chọn tài khoản có hạn ngạch cao nhất
+  aam agy settings --enable   # Bật tự động chọn cho Antigravity
+  aam agy refresh             # Làm mới hạn ngạch Antigravity
+  aam agy reset               # Đặt lại thời gian chờ (cooldowns)
+  aam agy delete 1            # Xóa tài khoản #1 của Antigravity
+  ```
+
+- **Quản lý tài khoản OpenAI Codex (`aam codex`):**
+  ```bash
+  aam codex                   # Xem nhanh danh sách tài khoản Codex
+  aam codex list              # Xem danh sách kèm tùy chọn (--active, --json)
+  aam codex switch 1          # Chuyển sang tài khoản #1 của Codex
+  aam codex login             # Đăng nhập thiết bị qua trình duyệt (Device OAuth)
+  aam codex import            # Tự động nhập tài khoản từ Codex CLI cục bộ
+  aam codex add --email <email> --token <token>  # Thêm tài khoản thủ công
+  aam codex auto-select       # Tự động chọn tài khoản Codex tối ưu
+  aam codex settings --enable # Bật tự động chọn cho Codex
+  aam codex refresh           # Làm mới hạn ngạch Codex
+  aam codex delete 1          # Xóa tài khoản #1 của Codex
+  ```
+
+- **Quản lý tài khoản Claude Code (`aam claude`):**
+  ```bash
+  aam claude                  # Xem nhanh danh sách tài khoản Claude
+  aam claude list             # Xem danh sách kèm tùy chọn (--active, --json)
+  aam claude switch 1         # Chuyển sang tài khoản #1 của Claude
+  aam claude import           # Tự động nhập tài khoản từ Claude Code CLI cục bộ
+  aam claude add --email <email> --token <token>  # Thêm session token thủ công
+  aam claude auto-select      # Tự động chọn tài khoản Claude tối ưu
+  aam claude refresh          # Làm mới hạn ngạch Claude
+  aam claude delete 1         # Xóa tài khoản #1 của Claude
+  ```
+
+- **Kiểm tra và thao tác chung (toàn bộ agent):**
+  ```bash
+  aam list                    # Xem toàn bộ tài khoản của tất cả agent
+  aam switch 1                # Chuyển tài khoản trong danh sách tổng
+  aam refresh                 # Làm mới hạn ngạch cho toàn bộ agent
+  aam auto-select             # Tự động chọn tài khoản có hạn ngạch cao nhất
+  aam settings                # Xem trạng thái tự động chọn của tất cả agent
+  ```
+
+### 5. Kịch bản gỡ cài đặt nhanh
 
 Nếu bạn muốn gỡ cài đặt trực tiếp mà không dùng lệnh CLI:
 
@@ -141,6 +236,8 @@ Sau khi chuyển đổi tài khoản, các phiên làm việc CLI hoặc IDE c�
 ├── agent-relay/                # Mã nguồn Rust backend và daemon
 │   ├── src/
 │   │   ├── cli.rs              # Trình quản lý dòng lệnh toàn cục (aam)
+│   │   ├── client.rs           # Khách gọi REST API nội bộ daemon
+│   │   ├── tui.rs              # Giao diện terminal tương tác toàn màn hình (Ratatui)
 │   │   ├── storage/            # Quản lý lưu trữ tài khoản và đồng bộ đăng nhập
 │   │   ├── proxy/              # Máy chủ cục bộ, điều phối hạn ngạch và giao diện web
 │   │   ├── oauth/              # Luồng xác thực đăng nhập OAuth
