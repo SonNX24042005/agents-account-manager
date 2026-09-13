@@ -622,17 +622,20 @@ async fn handle_switch_account(
 
 async fn handle_auto_select_highest_gemini(State(state): State<AppState>) -> impl IntoResponse {
     match state.token_manager.select_best_account_for_active_model().await {
-        Ok((acc, cat)) => (
-            StatusCode::OK,
-            Json(json!({
-                "status": "ok",
-                "category": cat.display_name(),
-                "account": acc.email,
-                "message": format!("Tự động chuyển sang tài khoản {} có hạn ngạch {} cao nhất", acc.email, cat.display_name()),
-                "data": PublicAccount::from(&acc)
-            })),
-        )
-            .into_response(),
+        Ok((acc, cat)) => {
+            let _ = state.token_manager.switch_account(&acc.id).await;
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "status": "ok",
+                    "category": cat.display_name(),
+                    "account": acc.email,
+                    "message": format!("Tự động chuyển sang tài khoản {} có hạn ngạch {} cao nhất", acc.email, cat.display_name()),
+                    "data": PublicAccount::from(&acc)
+                })),
+            )
+                .into_response()
+        }
         Err(err) => (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": err.to_string() })),

@@ -131,6 +131,8 @@ pub struct Account {
     pub quota_groups: Vec<QuotaGroupInfo>,
     pub is_active: bool,
     pub rate_limit_until: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub last_warmup_at: Option<DateTime<Utc>>,
 }
 
 impl Account {
@@ -157,6 +159,7 @@ impl Account {
             quota_groups: Vec::new(),
             is_active: true,
             rate_limit_until: None,
+            last_warmup_at: None,
         }
     }
 

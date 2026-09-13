@@ -47,6 +47,8 @@ struct NativeAccount {
     next_check: Option<DateTime<Utc>>,
     #[serde(default)]
     error: Option<String>,
+    #[serde(default)]
+    last_warmup_at: Option<DateTime<Utc>>,
 }
 
 impl NativeAccount {
@@ -382,6 +384,7 @@ impl AgentManager {
                 checked_at: None,
                 next_check: None,
                 error: None,
+                last_warmup_at: None,
             });
         }
         self.save(&next)?;
@@ -525,6 +528,59 @@ impl AgentManager {
                                     stored.error = None;
                                     stored.next_check =
                                         Some(stored.schedule_after_success(Utc::now()));
+
+                                    let now = Utc::now();
+                                    if crate::proxy::warmup::WarmupService::is_native_eligible(
+                                        stored.agent,
+                                        &stored.quota_groups,
+                                        stored.last_warmup_at,
+                                        now,
+                                    ) {
+                                        let client_clone = client.clone();
+                                        let agent_type = stored.agent;
+                                        let email = stored.email.clone();
+                                        let token = match agent_type {
+                                            Agent::Codex => stored.credentials["tokens"]["access_token"]
+                                                .as_str()
+                                                .map(|s| s.to_string()),
+                                            Agent::Claude => stored.credentials["claudeAiOauth"]["accessToken"]
+                                                .as_str()
+                                                .map(|s| s.to_string()),
+                                            _ => None,
+                                        };
+                                        if let Some(tok) = token {
+                                            tokio::spawn(async move {
+                                                let res = match agent_type {
+                                                    Agent::Codex => {
+                                                        crate::proxy::warmup::WarmupService::warmup_codex(
+                                                            &client_clone,
+                                                            &tok,
+                                                            &email,
+                                                        )
+                                                        .await
+                                                    }
+                                                    Agent::Claude => {
+                                                        crate::proxy::warmup::WarmupService::warmup_claude(
+                                                            &client_clone,
+                                                            &tok,
+                                                            &email,
+                                                        )
+                                                        .await
+                                                    }
+                                                    _ => Ok(()),
+                                                };
+                                                if let Err(err) = res {
+                                                    tracing::warn!(
+                                                        "[Warmup] Không thể kích hoạt 5 giờ cho {} ({}): {}",
+                                                        email,
+                                                        agent_type.name(),
+                                                        err
+                                                    );
+                                                }
+                                            });
+                                            stored.last_warmup_at = Some(now);
+                                        }
+                                    }
                                 }
                                 Err(e) => {
                                     if let Some(retry) = e.downcast_ref::<QuotaRetry>() {

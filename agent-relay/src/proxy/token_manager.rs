@@ -365,6 +365,32 @@ impl TokenManager {
             if let Some(acc) = write_list.iter_mut().find(|a| a.id == account.id) {
                 account.is_active = acc.is_active;
                 account.rate_limit_until = acc.rate_limit_until;
+                account.last_warmup_at = acc.last_warmup_at;
+
+                // Kiểm tra và kích hoạt đếm ngược 5 giờ cho tài khoản Antigravity đủ điều kiện
+                let now = chrono::Utc::now();
+                if crate::proxy::warmup::WarmupService::is_antigravity_eligible(&account, now) {
+                    let client_clone = client.clone();
+                    let access_tok = account.access_token.clone();
+                    let email = account.email.clone();
+                    tokio::spawn(async move {
+                        if let Err(err) = crate::proxy::warmup::WarmupService::warmup_antigravity(
+                            &client_clone,
+                            &access_tok,
+                            &email,
+                        )
+                        .await
+                        {
+                            tracing::warn!(
+                                "[Warmup] Không thể kích hoạt bộ đếm 5 giờ cho Antigravity ({}): {}",
+                                email,
+                                err
+                            );
+                        }
+                    });
+                    account.last_warmup_at = Some(now);
+                }
+
                 self.store
                     .save(&account)
                     .unwrap_or_else(|e| tracing::warn!("Không lưu được quota: {e}"));

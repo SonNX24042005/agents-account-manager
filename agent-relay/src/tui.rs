@@ -937,8 +937,10 @@ fn render_account_detail(f: &mut Frame, area: Rect, app: &TuiApp) {
                 Color::Red
             };
 
-            let title_line = match (reset_countdown, *pct < 100.0) {
-                (Some(ref cd), true) => format!("{} ({:.0}%) - hồi sau {}", label, pct, cd),
+            let title_line = match reset_countdown {
+                Some(ref cd) if cd != "đã đến giờ" => {
+                    format!("{} ({:.0}%) - hồi sau {}", label, pct, cd)
+                }
                 _ => format!("{} ({:.0}%)", label, pct),
             };
 
