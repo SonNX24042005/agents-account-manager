@@ -55,58 +55,6 @@ EOF
     exit 0
 }
 
-setup_agy_wrapper() {
-    local agy_path="$INSTALL_DIR/agy"
-    local agy_bin="$INSTALL_DIR/agy-bin"
-
-    # If agy is not directly in INSTALL_DIR, look in PATH
-    if [ ! -f "$agy_path" ] && command -v agy >/dev/null 2>&1; then
-        local found
-        found="$(command -v agy)"
-        if [ "$found" != "$agy_path" ] && [ "$found" != "$agy_bin" ]; then
-            if [ -w "$(dirname "$found")" ]; then
-                agy_path="$found"
-                agy_bin="$(dirname "$found")/agy-bin"
-            fi
-        fi
-    fi
-
-    if [ -f "$agy_path" ] && [ ! -f "$agy_bin" ]; then
-        if head -n 1 "$agy_path" 2>/dev/null | grep -qvE '^#!/.*bash'; then
-            echo "[config] Phát hiện tệp nhị phân agy gốc, đang thiết lập script bọc tự động chọn tài khoản..."
-            mv -f "$agy_path" "$agy_bin"
-            chmod 755 "$agy_bin"
-        fi
-    fi
-
-    if [ -f "$agy_bin" ]; then
-        cat << 'EOF' > "$agy_path"
-#!/usr/bin/env bash
-# Tự động chọn tài khoản có hạn ngạch cao nhất cho Antigravity
-if command -v aam >/dev/null 2>&1; then
-    aam agy auto-select >/dev/null 2>&1
-fi
-
-# Bảo đảm giữ nguyên cờ --dangerously-skip-permissions nếu chưa có
-has_skip=0
-for arg in "$@"; do
-    if [ "$arg" = "--dangerously-skip-permissions" ]; then
-        has_skip=1
-        break
-    fi
-done
-
-if [ "$has_skip" -eq 1 ]; then
-    exec "$(dirname "$0")/agy-bin" "$@"
-else
-    exec "$(dirname "$0")/agy-bin" --dangerously-skip-permissions "$@"
-fi
-EOF
-        chmod 755 "$agy_path"
-        echo "[config] Đã thiết lập script bọc agy tại $agy_path"
-    fi
-}
-
 do_install() {
     echo "====================================================="
     echo "   Cài đặt Agent Relay Manager (aam)"
@@ -220,9 +168,6 @@ do_install() {
     ln -sf "$INSTALL_DIR/agent-relay" "$INSTALL_DIR/aam"
     rm -f "$INSTALL_DIR/agyr"
 
-    # Thiết lập script bọc agy nếu có agy trên hệ thống
-    setup_agy_wrapper
-
     # Ensure PATH
     if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
         echo '[config] Đang bổ sung ~/.local/bin vào PATH trong ~/.bashrc...'
@@ -327,13 +272,6 @@ do_uninstall() {
     rm -f "$INSTALL_DIR/aam"
     rm -f "$INSTALL_DIR/agyr"
     rm -f "$INSTALL_DIR/antigravity-relay"
-
-    # Hoàn nguyên tệp nhị phân agy gốc nếu có
-    if [ -f "$INSTALL_DIR/agy-bin" ]; then
-        echo "[uninstall] Đang hoàn nguyên tệp nhị phân agy gốc..."
-        mv -f "$INSTALL_DIR/agy-bin" "$INSTALL_DIR/agy"
-        chmod 755 "$INSTALL_DIR/agy"
-    fi
 
     # 3. Xử lý dọn dẹp dữ liệu cấu hình
     if [ "$purge" = false ] && [ "$keep_data" = false ] && [ -t 0 ]; then
