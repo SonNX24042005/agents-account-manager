@@ -57,21 +57,24 @@ pub struct UnifiedAccountDto {
 
 impl UnifiedAccountDto {
     pub fn primary_reset_countdown(&self) -> Option<String> {
-        let mut best_bucket: Option<&QuotaBucketInfo> = None;
+        let mut best: Option<(&QuotaBucketInfo, String)> = None;
         for group in &self.quota_groups {
             for bucket in &group.buckets {
-                if bucket.effective_percentage() < 100.0 && bucket.reset_time.is_some() {
-                    match best_bucket {
-                        None => best_bucket = Some(bucket),
-                        Some(prev) => {
+                if let Some(cd) = bucket.reset_countdown() {
+                    if cd == "đã đến giờ" {
+                        continue;
+                    }
+                    match best {
+                        None => best = Some((bucket, cd)),
+                        Some((prev_bucket, _)) => {
                             let curr_pct = bucket.effective_percentage();
-                            let prev_pct = prev.effective_percentage();
+                            let prev_pct = prev_bucket.effective_percentage();
                             if curr_pct < prev_pct {
-                                best_bucket = Some(bucket);
+                                best = Some((bucket, cd));
                             } else if (curr_pct - prev_pct).abs() < f64::EPSILON {
-                                if let (Some(ref r_curr), Some(ref r_prev)) = (&bucket.reset_time, &prev.reset_time) {
+                                if let (Some(ref r_curr), Some(ref r_prev)) = (&bucket.reset_time, &prev_bucket.reset_time) {
                                     if r_curr < r_prev {
-                                        best_bucket = Some(bucket);
+                                        best = Some((bucket, cd));
                                     }
                                 }
                             }
@@ -80,7 +83,7 @@ impl UnifiedAccountDto {
                 }
             }
         }
-        best_bucket.and_then(|b| b.reset_countdown())
+        best.map(|(_, cd)| cd)
     }
 }
 
@@ -718,3 +721,93 @@ impl ApiClient {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{Duration, Utc};
+
+    #[test]
+    fn test_primary_reset_countdown_at_100_percent() {
+        let future_time = (Utc::now() + Duration::hours(3) + Duration::minutes(20)).to_rfc3339();
+        let dto = UnifiedAccountDto {
+            id: "test-id".to_string(),
+            agent: Agent::Antigravity,
+            email: "test@example.com".to_string(),
+            is_active: true,
+            quota_percentage: Some(100.0),
+            quota_groups: vec![QuotaGroupInfo {
+                name: "Gemini Models".to_string(),
+                buckets: vec![QuotaBucketInfo {
+                    window: "5h".to_string(),
+                    remaining_percentage: 100.0,
+                    reset_time: Some(future_time),
+                }],
+            }],
+            checked_at: Some(Utc::now()),
+            status: "Sẵn sàng".to_string(),
+            error: None,
+        };
+
+        assert_eq!(dto.primary_reset_countdown(), Some("~3h 20m".to_string()));
+    }
+
+    #[test]
+    fn test_primary_reset_countdown_expired_returns_none() {
+        let past_time = (Utc::now() - Duration::hours(1)).to_rfc3339();
+        let dto = UnifiedAccountDto {
+            id: "test-id".to_string(),
+            agent: Agent::Antigravity,
+            email: "test@example.com".to_string(),
+            is_active: true,
+            quota_percentage: Some(100.0),
+            quota_groups: vec![QuotaGroupInfo {
+                name: "Gemini Models".to_string(),
+                buckets: vec![QuotaBucketInfo {
+                    window: "5h".to_string(),
+                    remaining_percentage: 100.0,
+                    reset_time: Some(past_time),
+                }],
+            }],
+            checked_at: Some(Utc::now()),
+            status: "Sẵn sàng".to_string(),
+            error: None,
+        };
+
+        assert_eq!(dto.primary_reset_countdown(), None);
+    }
+
+    #[test]
+    fn test_primary_reset_countdown_skips_expired_and_finds_valid() {
+        let future_time = (Utc::now() + Duration::hours(3) + Duration::minutes(20)).to_rfc3339();
+        let past_time = (Utc::now() - Duration::hours(1)).to_rfc3339();
+        let dto = UnifiedAccountDto {
+            id: "test-id".to_string(),
+            agent: Agent::Antigravity,
+            email: "test@example.com".to_string(),
+            is_active: true,
+            quota_percentage: Some(80.0),
+            quota_groups: vec![QuotaGroupInfo {
+                name: "Gemini Models".to_string(),
+                buckets: vec![
+                    QuotaBucketInfo {
+                        window: "5h".to_string(),
+                        remaining_percentage: 100.0,
+                        reset_time: Some(future_time),
+                    },
+                    QuotaBucketInfo {
+                        window: "weekly".to_string(),
+                        remaining_percentage: 80.0,
+                        reset_time: Some(past_time),
+                    },
+                ],
+            }],
+            checked_at: Some(Utc::now()),
+            status: "Sẵn sàng".to_string(),
+            error: None,
+        };
+
+        assert_eq!(dto.primary_reset_countdown(), Some("~3h 20m".to_string()));
+    }
+}
+

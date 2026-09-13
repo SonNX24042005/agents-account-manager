@@ -20,6 +20,9 @@ Công cụ quản lý đa tài khoản và điều phối hạn ngạch thông m
 - **Thao tác nhanh qua dòng lệnh (CLI)**: Đầy đủ các lệnh quản lý tài khoản, chuyển đổi, làm mới, lọc theo agent và cấu hình định tuyến ngay trên terminal (`aam list`, `aam switch`, `aam preference`...).
 - **Chuyển đổi tài khoản tức thì**: Đổi tài khoản hoạt động nhanh chóng qua giao diện web, TUI hoặc CLI mà không cần sao chép thủ công thông tin đăng nhập.
 - **Tự động chọn tài khoản thông minh**: Tự động nhận diện mô hình đang dùng và chuyển sang tài khoản có hạn ngạch cao nhất khi mức sử dụng sắp hết.
+- **Kích hoạt sớm chu kỳ 5 giờ (warmup service)**: Tự động gửi yêu cầu kiểm tra siêu nhẹ để kích hoạt bộ đếm thời gian hồi phục 5 giờ ngay khi tài khoản đạt 100% hạn ngạch, tối đa hóa lượng quota sẵn sàng trong ngày.
+- **Script bọc nhị phân tự động chọn tài khoản (`agy`)**: Tự động bọc nhị phân gốc Antigravity CLI (`agy-bin`) bằng script khởi chạy trong suốt, tự động chọn tài khoản có hạn ngạch cao nhất và chuyển tiếp cờ `--dangerously-skip-permissions`.
+- **Hiển thị thời gian đếm ngược liên tục**: Luôn hiển thị đồng hồ đếm ngược reset 5 giờ trên danh sách CLI (`aam list`, `aam check`) và giao diện TUI (`aam tui`), kể cả khi hạn ngạch đang ở mức 100%.
 - **Theo dõi hạn ngạch trực quan**: Cập nhật liên tục số lượng yêu cầu còn lại, giới hạn sử dụng và thời gian đặt lại hạn ngạch của từng tài khoản.
 - **Không can thiệp môi trường hệ thống**: Hoạt động nền độc lập, không sửa đổi các tệp cấu hình shell (`.bashrc`, `.zshrc`) và không tạo alias phức tạp.
 - **Bảng điều khiển web cục bộ**: Giao diện tối giản, trực quan, hỗ trợ chế độ tối tại địa chỉ `http://127.0.0.1:8045`.
@@ -127,8 +130,8 @@ Kịch bản sẽ tự động tải bản phát hành phù hợp với hệ đi
   Các phím tắt chính trong giao diện TUI:
   - `Tab` hoặc `1`, `2`, `3`: Chuyển đổi giữa các agent (Antigravity, Codex, Claude).
   - `↑` / `↓` hoặc `j` / `k`: Di chuyển và chọn tài khoản trong danh sách.
-  - `Enter` hoặc `s`: Chuyển sang tài khoản đang chọn (đồng bộ ngay vào OS Keyring và IDE database).
-  - `+` hoặc `n`: Mở menu thêm tài khoản mới (Google OAuth cho Antigravity, Device OAuth cho Codex, import cho Claude, hoặc nhập thủ công).
+  - `Enter` hoặc `s`: Chuyển sang tài khoản đang chọn (đồng bộ ngay vào OS keyring và IDE database).
+  - `+` hoặc `n`: Mở menu thêm tài khoản mới (Google OAuth cho Antigravity, device OAuth cho Codex, import cho Claude, hoặc nhập thủ công).
   - `r`: Làm mới dữ liệu hạn ngạch ngay lập tức.
   - `p`: Đổi chế độ ưu tiên định tuyến (Auto -> Gemini -> Claude & GPT).
   - `a`: Tự động chọn tài khoản có hạn ngạch cao nhất.
@@ -228,6 +231,8 @@ Bảng điều khiển cung cấp các mục riêng cho từng agent được h�
 
 Sau khi chuyển đổi tài khoản, các phiên làm việc CLI hoặc IDE của bạn sẽ áp dụng thông tin đăng nhập mới ở lượt chạy kế tiếp hoặc sau khi khởi động lại phiên đó.
 
+Chi tiết kiến trúc hệ thống, cơ chế kích hoạt sớm 5 giờ (warmup service) và nguyên lý kỹ thuật của script bọc `agy` được trình bày đầy đủ tại [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ---
 
 ## Cấu trúc thư mục
@@ -235,20 +240,28 @@ Sau khi chuyển đổi tài khoản, các phiên làm việc CLI hoặc IDE c�
 ```
 ├── agent-relay/                # Mã nguồn Rust backend và daemon
 │   ├── src/
-│   │   ├── cli.rs              # Trình quản lý dòng lệnh toàn cục (aam)
-│   │   ├── client.rs           # Khách gọi REST API nội bộ daemon
+│   │   ├── cli.rs              # Trình quản lý dòng lệnh toàn cục (aam) & cài đặt nhị phân
+│   │   ├── client.rs           # Khách gọi REST API nội bộ daemon & tính toán đếm ngược
 │   │   ├── tui.rs              # Giao diện terminal tương tác toàn màn hình (Ratatui)
 │   │   ├── storage/            # Quản lý lưu trữ tài khoản và đồng bộ đăng nhập
-│   │   ├── proxy/              # Máy chủ cục bộ, điều phối hạn ngạch và giao diện web
+│   │   ├── proxy/              # Máy chủ cục bộ, điều phối hạn ngạch, warmup và giao diện web
+│   │   │   ├── warmup.rs       # Dịch vụ kích hoạt sớm chu kỳ 5 giờ (warmup service)
+│   │   │   ├── server.rs       # Điểm cuối REST Axum & middleware xác thực
+│   │   │   └── agents.rs       # Quản lý và điều phối hạn ngạch đa agent
 │   │   ├── oauth/              # Luồng xác thực đăng nhập OAuth
 │   │   └── device/             # Định danh thiết bị
 │   ├── Cargo.lock
 │   └── Cargo.toml
+├── docs/                       # Tài liệu hướng dẫn chi tiết và tài liệu tham khảo
+│   ├── CLI_REFERENCE.md        # Hướng dẫn chi tiết toàn bộ lệnh CLI và REST API
+│   ├── ROADMAP.md              # Lộ trình phát triển sản phẩm
+│   └── SECURITY_AUDIT.md       # Báo cáo kiểm toán bảo mật
 ├── scripts/                    # Thư mục chứa các kịch bản quản lý
-│   ├── install.sh              # Kịch bản cài đặt và quản lý vòng đời trên Linux / macOS
-│   ├── uninstall.sh            # Kịch bản gỡ cài đặt độc lập trên Linux / macOS
+│   ├── install.sh              # Kịch bản cài đặt và thiết lập script bọc trên Linux / macOS
+│   ├── uninstall.sh            # Kịch bản gỡ cài đặt và hoàn nguyên tệp nhị phân trên Linux / macOS
 │   ├── install.ps1             # Kịch bản cài đặt và quản lý vòng đời trên Windows PowerShell
 │   └── uninstall.ps1           # Kịch bản gỡ cài đặt độc lập trên Windows PowerShell
+├── ARCHITECTURE.md             # Tài liệu kiến trúc hệ thống và cơ chế cốt lõi
 ├── LICENSE                     # Giấy phép MIT
 ├── README.md                   # Tài liệu tiếng Anh
 └── README_VI.md                # Tài liệu tiếng Việt

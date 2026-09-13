@@ -750,12 +750,8 @@ fn render_accounts_table(f: &mut Frame, area: Rect, app: &mut TuiApp) {
         .map(|(_idx, acc)| {
             let active_marker = if acc.is_active { "* " } else { "  " };
             let quota_str = if let Some(q) = acc.quota_percentage {
-                if q < 100.0 {
-                    if let Some(cd) = acc.primary_reset_countdown() {
-                        format!("{:.0}% ({})", q, cd)
-                    } else {
-                        format!("{:.0}%", q)
-                    }
+                if let Some(cd) = acc.primary_reset_countdown() {
+                    format!("{:.0}% ({})", q, cd)
                 } else {
                     format!("{:.0}%", q)
                 }

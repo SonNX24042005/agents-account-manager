@@ -20,6 +20,9 @@ An intelligent multi-account manager and quota coordinator for AI coding agents,
 - **Fast CLI commands & flags**: Manage, list, switch, refresh, filter accounts, and configure routing preferences directly from terminal commands (`aam list`, `aam switch`, `aam preference`...).
 - **One-click account switching**: Switch active accounts instantly from the web dashboard, TUI, or CLI without manual credential copying.
 - **Smart quota auto-selection**: Automatically detect the active model and switch to the account with the highest remaining quota when limits are approached.
+- **Proactive 5-hour quota warmup**: Automatically triggers the 5-hour cooldown window when an account reaches 100% quota via a lightweight ping, ensuring continuous replenishment.
+- **Transparent CLI account wrapper**: Automatically wraps the Antigravity binary (`agy-bin`) with a transparent launcher (`agy`) that auto-selects the optimal account before execution and injects required flags.
+- **Persistent countdown visibility**: Always displays the remaining 5-hour reset time across CLI and TUI, even when quota currently reads 100%.
 - **Real-time quota monitoring**: Keep track of remaining requests, rate limits, and reset schedules across accounts.
 - **Zero environment pollution**: Runs cleanly in the background without modifying shell profiles (`.bashrc`, `.zshrc`) or creating invasive aliases.
 - **Local web dashboard**: Clean, responsive dark-mode interface hosted locally at `http://127.0.0.1:8045`.
@@ -127,8 +130,8 @@ The script automatically downloads the release binary for your platform, verifie
   Key keyboard shortcuts in TUI:
   - `Tab` or `1`, `2`, `3`: Switch between agents (Antigravity, Codex, Claude).
   - `↑` / `↓` or `j` / `k`: Navigate through the account list.
-  - `Enter` or `s`: Switch to the selected account (syncs instantly to OS Keyring and IDE database).
-  - `+` or `n`: Open the add account menu (Google OAuth for Antigravity, Device OAuth for Codex, CLI import for Claude, or manual input).
+  - `Enter` or `s`: Switch to the selected account (syncs instantly to OS keyring and IDE database).
+  - `+` or `n`: Open the add account menu (Google OAuth for Antigravity, device OAuth for Codex, CLI import for Claude, or manual input).
   - `r`: Refresh quota data immediately.
   - `p`: Cycle routing preference (Auto -> Gemini -> Claude & GPT).
   - `a`: Auto-select the account with highest available quota.
@@ -228,6 +231,8 @@ The web dashboard provides dedicated sections for each supported agent:
 
 After switching an account, existing CLI or IDE sessions pick up the active credentials on their next command or when restarted.
 
+For detailed architecture, the proactive 5-hour warmup mechanism, and technical internals of the `agy` wrapper script, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ---
 
 ## Project structure
@@ -235,20 +240,28 @@ After switching an account, existing CLI or IDE sessions pick up the active cred
 ```
 ├── agent-relay/                # Rust backend daemon source code
 │   ├── src/
-│   │   ├── cli.rs              # Global CLI command manager (aam)
-│   │   ├── client.rs           # Local daemon REST API client
+│   │   ├── cli.rs              # Global CLI command manager (aam) & binary installer
+│   │   ├── client.rs           # Local daemon REST API client & countdown calculations
 │   │   ├── tui.rs              # Full-screen interactive terminal UI (Ratatui)
 │   │   ├── storage/            # Local account storage and credential synchronization
-│   │   ├── proxy/              # Local server, quota coordination, and web dashboard
+│   │   ├── proxy/              # Local server, quota coordination, warmup, and web dashboard
+│   │   │   ├── warmup.rs       # Proactive 5-hour quota warmup service
+│   │   │   ├── server.rs       # Axum REST endpoints & auth middleware
+│   │   │   └── agents.rs       # Multi-agent quota monitoring & polling loops
 │   │   ├── oauth/              # OAuth authorization flows
 │   │   └── device/             # Device identification
 │   ├── Cargo.lock
 │   └── Cargo.toml
+├── docs/                       # Detailed documentation & references
+│   ├── CLI_REFERENCE.md        # Complete CLI command and API reference
+│   ├── ROADMAP.md              # Project milestones & roadmap
+│   └── SECURITY_AUDIT.md       # Security review report
 ├── scripts/                    # Management & lifecycle scripts
-│   ├── install.sh              # Linux / macOS installation & lifecycle script
-│   ├── uninstall.sh            # Linux / macOS uninstallation script
+│   ├── install.sh              # Linux / macOS installation & wrapper setup script
+│   ├── uninstall.sh            # Linux / macOS uninstallation & restore script
 │   ├── install.ps1             # Windows PowerShell installation & lifecycle script
 │   └── uninstall.ps1           # Windows PowerShell uninstallation script
+├── ARCHITECTURE.md             # System architecture & core mechanisms
 ├── LICENSE                     # MIT License
 ├── README.md                   # English documentation
 └── README_VI.md                # Vietnamese documentation

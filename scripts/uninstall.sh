@@ -85,6 +85,13 @@ rm -f "$INSTALL_DIR/aam"
 rm -f "$INSTALL_DIR/agyr"
 rm -f "$INSTALL_DIR/antigravity-relay"
 
+# Hoàn nguyên tệp nhị phân agy gốc nếu có
+if [ -f "$INSTALL_DIR/agy-bin" ]; then
+    echo "[uninstall] Đang hoàn nguyên tệp nhị phân agy gốc..."
+    mv -f "$INSTALL_DIR/agy-bin" "$INSTALL_DIR/agy"
+    chmod 755 "$INSTALL_DIR/agy"
+fi
+
 # 3. Xử lý dọn dẹp dữ liệu cấu hình
 if [ "$PURGE" = false ] && [ "$KEEP_DATA" = false ] && [ -t 0 ]; then
     echo ""
