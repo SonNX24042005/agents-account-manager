@@ -1,8 +1,8 @@
-use std::path::PathBuf;
 use anyhow::{Context, Result};
-use rusqlite::Connection;
-use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
+use rusqlite::Connection;
+use std::path::PathBuf;
 
 pub struct IdeDbSync;
 
@@ -17,23 +17,31 @@ impl IdeDbSync {
 
         #[cfg(target_os = "linux")]
         {
-            candidate_paths.push(home.join(".config/Antigravity IDE/User/globalStorage/state.vscdb"));
+            candidate_paths
+                .push(home.join(".config/Antigravity IDE/User/globalStorage/state.vscdb"));
             candidate_paths.push(home.join(".config/Antigravity/User/globalStorage/state.vscdb"));
             candidate_paths.push(home.join(".config/Code/User/globalStorage/state.vscdb"));
         }
 
         #[cfg(target_os = "windows")]
         {
-            candidate_paths.push(home.join("AppData/Roaming/Antigravity IDE/User/globalStorage/state.vscdb"));
-            candidate_paths.push(home.join("AppData/Roaming/Antigravity/User/globalStorage/state.vscdb"));
+            candidate_paths
+                .push(home.join("AppData/Roaming/Antigravity IDE/User/globalStorage/state.vscdb"));
+            candidate_paths
+                .push(home.join("AppData/Roaming/Antigravity/User/globalStorage/state.vscdb"));
             candidate_paths.push(home.join("AppData/Roaming/Code/User/globalStorage/state.vscdb"));
         }
 
         #[cfg(target_os = "macos")]
         {
-            candidate_paths.push(home.join("Library/Application Support/Antigravity IDE/User/globalStorage/state.vscdb"));
-            candidate_paths.push(home.join("Library/Application Support/Antigravity/User/globalStorage/state.vscdb"));
-            candidate_paths.push(home.join("Library/Application Support/Code/User/globalStorage/state.vscdb"));
+            candidate_paths.push(home.join(
+                "Library/Application Support/Antigravity IDE/User/globalStorage/state.vscdb",
+            ));
+            candidate_paths.push(
+                home.join("Library/Application Support/Antigravity/User/globalStorage/state.vscdb"),
+            );
+            candidate_paths
+                .push(home.join("Library/Application Support/Code/User/globalStorage/state.vscdb"));
         }
 
         candidate_paths.into_iter().filter(|p| p.exists()).collect()
@@ -57,7 +65,11 @@ impl IdeDbSync {
         out
     }
 
-    pub fn build_unified_oauth_token(access_token: &str, refresh_token: &str, expiry_secs: i64) -> String {
+    pub fn build_unified_oauth_token(
+        access_token: &str,
+        refresh_token: &str,
+        expiry_secs: i64,
+    ) -> String {
         // 1. Build inner OAuthTokenInfo proto
         let mut inner_proto = Vec::new();
         inner_proto.extend(Self::encode_tag_len(1, 2, access_token.as_bytes()));
@@ -65,7 +77,7 @@ impl IdeDbSync {
         if !refresh_token.is_empty() {
             inner_proto.extend(Self::encode_tag_len(3, 2, refresh_token.as_bytes()));
         }
-        
+
         let mut exp_inner = Vec::new();
         exp_inner.push((1 << 3) | 0);
         exp_inner.extend(Self::encode_varint(expiry_secs as u64));
@@ -76,9 +88,13 @@ impl IdeDbSync {
 
         // 2. Build outer unified proto
         let mut outer = Vec::new();
-        
+
         let mut entry1 = Vec::new();
-        entry1.extend(Self::encode_tag_len(1, 2, b"authStateWithContextSentinelKey"));
+        entry1.extend(Self::encode_tag_len(
+            1,
+            2,
+            b"authStateWithContextSentinelKey",
+        ));
         entry1.extend(Self::encode_tag_len(2, 2, auth_state_json.as_bytes()));
         outer.extend(Self::encode_tag_len(1, 2, &entry1));
 
@@ -101,22 +117,31 @@ impl IdeDbSync {
         let conn = Connection::open(db_path).context("Failed to open Antigravity IDE SQLite DB")?;
 
         let query = "INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?1, ?2)";
-        
-        let unified_oauth = Self::build_unified_oauth_token(access_token, refresh_token, expires_at_secs);
-        conn.execute(query, ["antigravityUnifiedStateSync.oauthToken", &unified_oauth])?;
+
+        let unified_oauth =
+            Self::build_unified_oauth_token(access_token, refresh_token, expires_at_secs);
+        conn.execute(
+            query,
+            ["antigravityUnifiedStateSync.oauthToken", &unified_oauth],
+        )?;
 
         let auth_json = serde_json::json!({
             "access_token": access_token,
             "refresh_token": refresh_token,
             "email": email,
             "machine_id": machine_id
-        }).to_string();
+        })
+        .to_string();
 
         conn.execute(query, ["antigravity.token", &auth_json])?;
         conn.execute(query, ["gemini.token", &auth_json])?;
         conn.execute(query, ["antigravity.currentAccount", email])?;
 
-        tracing::info!("[IDE Sync] Successfully injected credential & unified token for {} into {:?}", email, db_path);
+        tracing::info!(
+            "[IDE Sync] Successfully injected credential & unified token for {} into {:?}",
+            email,
+            db_path
+        );
         Ok(())
     }
 }

@@ -231,7 +231,7 @@ impl TokenManager {
         if !flags.enabled(Agent::Antigravity) {
             return list
                 .iter()
-                .filter(eligible)
+                .filter(|a| !a.is_rate_limited())
                 .find(|a| a.is_active)
                 .cloned()
                 .ok_or_else(|| {
@@ -243,6 +243,23 @@ impl TokenManager {
             .max_by(|a, b| a.compare_quota_priority(b, category))
             .cloned()
             .ok_or_else(|| anyhow!("Không có tài khoản còn quota"))
+    }
+
+    pub async fn select_best_account_for_rotation(&self) -> Result<Account> {
+        self.sync_active_account_from_disk().await;
+        let list = self.accounts.read().await;
+        let category = self.model_detector.get_effective_category();
+        let eligible = |a: &&Account| {
+            a.has_fresh_quota()
+                && !a.is_rate_limited()
+                && a.has_available_weekly_quota_for_category(category)
+                && a.get_effective_quota_for_category(category) > 0.0
+        };
+        list.iter()
+            .filter(eligible)
+            .max_by(|a, b| a.compare_quota_priority(b, category))
+            .cloned()
+            .ok_or_else(|| anyhow!("Không còn tài khoản khả dụng trong pool"))
     }
 
     pub async fn mark_rate_limited(&self, email: &str, cooldown_seconds: i64) {

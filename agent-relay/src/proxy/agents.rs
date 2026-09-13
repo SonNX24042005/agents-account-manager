@@ -540,10 +540,12 @@ impl AgentManager {
                                         let agent_type = stored.agent;
                                         let email = stored.email.clone();
                                         let token = match agent_type {
-                                            Agent::Codex => stored.credentials["tokens"]["access_token"]
+                                            Agent::Codex => stored.credentials["tokens"]
+                                                ["access_token"]
                                                 .as_str()
                                                 .map(|s| s.to_string()),
-                                            Agent::Claude => stored.credentials["claudeAiOauth"]["accessToken"]
+                                            Agent::Claude => stored.credentials["claudeAiOauth"]
+                                                ["accessToken"]
                                                 .as_str()
                                                 .map(|s| s.to_string()),
                                             _ => None,

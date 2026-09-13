@@ -13,7 +13,8 @@ async fn main() -> anyhow::Result<()> {
     // 1. Initialize colorful terminal logging subscriber
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| "info,agent_relay=debug,antigravity_relay=debug".into()),
+            std::env::var("RUST_LOG")
+                .unwrap_or_else(|_| "info,agent_relay=debug,antigravity_relay=debug".into()),
         ))
         .with(tracing_subscriber::fmt::layer().with_thread_ids(false))
         .init();

@@ -77,7 +77,9 @@ impl Config {
     /// Load master API key from env var or persisted file. Generates a new random key on first run.
     fn load_or_generate_master_key(data_dir: &Path) -> String {
         // Priority 1: environment variable override
-        if let Ok(key) = std::env::var("AGENT_MASTER_KEY").or_else(|_| std::env::var("ANTIGRAVITY_MASTER_KEY")) {
+        if let Ok(key) =
+            std::env::var("AGENT_MASTER_KEY").or_else(|_| std::env::var("ANTIGRAVITY_MASTER_KEY"))
+        {
             if !key.is_empty() {
                 return key;
             }

@@ -163,7 +163,10 @@ fn is_google_cloud_code_traffic(headers: &HeaderMap) -> bool {
     {
         return true;
     }
-    if let Some(ua) = headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()) {
+    if let Some(ua) = headers
+        .get(header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+    {
         let ua_lower = ua.to_lowercase();
         if ua_lower.contains("antigravity")
             || ua_lower.contains("cloudcode")
@@ -270,8 +273,14 @@ impl Server {
             )
             .route("/api/agents/accounts", get(handle_native_accounts))
             .route("/api/agents/import", post(handle_native_import))
-            .route("/api/agents/codex/login", get(handle_codex_login_status).post(handle_codex_login_start))
-            .route("/api/agents/codex/login/cancel", post(handle_codex_login_cancel))
+            .route(
+                "/api/agents/codex/login",
+                get(handle_codex_login_status).post(handle_codex_login_start),
+            )
+            .route(
+                "/api/agents/codex/login/cancel",
+                post(handle_codex_login_cancel),
+            )
             .route("/api/agents/switch", post(handle_native_switch))
             .route("/api/agents/delete", post(handle_native_delete))
             .route("/api/agents/refresh", post(handle_agent_refresh))
@@ -349,7 +358,11 @@ impl Server {
             }
         });
         tracing::info!("Agent relay đang chạy tại http://{}", addr);
-        let result = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await;
+        let result = axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await;
         antigravity_task.abort();
         native_task.abort();
         result?;
@@ -424,12 +437,21 @@ async fn handle_codex_login_start(State(state): State<AppState>) -> Response {
 }
 
 async fn handle_codex_login_status(State(state): State<AppState>) -> Response {
-    ([(header::CACHE_CONTROL, "no-store")], Json(state.codex_login.status().await)).into_response()
+    (
+        [(header::CACHE_CONTROL, "no-store")],
+        Json(state.codex_login.status().await),
+    )
+        .into_response()
 }
 
 #[derive(Deserialize)]
-struct CancelCodexLogin { id: String }
-async fn handle_codex_login_cancel(State(state): State<AppState>, Json(payload): Json<CancelCodexLogin>) -> Response {
+struct CancelCodexLogin {
+    id: String,
+}
+async fn handle_codex_login_cancel(
+    State(state): State<AppState>,
+    Json(payload): Json<CancelCodexLogin>,
+) -> Response {
     agent_result(state.codex_login.cancel(&payload.id).await)
 }
 
@@ -705,7 +727,10 @@ async fn handle_auto_select_highest_gemini(
         .enabled(crate::proxy::selection::Agent::Antigravity);
     if !is_enabled {
         let current = state.token_manager.get_active_account().await;
-        let email = current.as_ref().map(|a| a.email.clone()).unwrap_or_default();
+        let email = current
+            .as_ref()
+            .map(|a| a.email.clone())
+            .unwrap_or_default();
         return (
             StatusCode::OK,
             Json(json!({
@@ -719,7 +744,10 @@ async fn handle_auto_select_highest_gemini(
     }
 
     let target_category = if let Some(ref model) = payload.as_ref().and_then(|p| p.model.as_ref()) {
-        state.token_manager.model_detector.record_cli_model_hint(model);
+        state
+            .token_manager
+            .model_detector
+            .record_cli_model_hint(model);
         crate::proxy::model_detector::TargetModelCategory::from_model_name(model)
     } else if let Some(ref conv_id) = payload.as_ref().and_then(|p| p.conversation.as_ref()) {
         state
@@ -1256,6 +1284,12 @@ async fn handle_passthrough_forwarding(
     }
 
     let incoming_headers = req.headers().clone();
+    tracing::info!(
+        "[Passthrough Forwarder] Request {} {} headers: {:?}",
+        method,
+        path,
+        incoming_headers
+    );
     let body_bytes = match axum::body::to_bytes(req.into_body(), 16 * 1024 * 1024).await {
         Ok(bytes) => bytes,
         Err(_) => {
@@ -1268,16 +1302,21 @@ async fn handle_passthrough_forwarding(
     let mut last_response: Option<Response> = None;
 
     for attempt in 0..max_attempts {
-        let account = match state.token_manager.select_best_account().await {
-            Ok(acc) => acc,
-            Err(e) => {
-                if attempt == 0 {
+        let account = if attempt == 0 {
+            match state.token_manager.select_best_account().await {
+                Ok(acc) => acc,
+                Err(_e) => {
                     return (
                         StatusCode::SERVICE_UNAVAILABLE,
                         Json(json!({ "error": "No available account in pool" })),
                     )
                         .into_response();
-                } else {
+                }
+            }
+        } else {
+            match state.token_manager.select_best_account_for_rotation().await {
+                Ok(acc) => acc,
+                Err(e) => {
                     tracing::warn!(
                         "[Passthrough Forwarder] No more available accounts in pool after attempt {}: {}",
                         attempt,
@@ -1354,7 +1393,7 @@ async fn handle_passthrough_forwarding(
             || status == StatusCode::FORBIDDEN
         {
             let error_body = response.bytes().await.unwrap_or_default();
-            let mut err_resp = Response::new(Body::from(error_body));
+            let mut err_resp = Response::new(Body::from(error_body.clone()));
             *err_resp.status_mut() = status;
             for (name, value) in &headers {
                 if !is_hop_by_hop_header(name) {
@@ -1368,9 +1407,10 @@ async fn handle_passthrough_forwarding(
                 .mark_rate_limited(&account.email, 300)
                 .await;
             tracing::warn!(
-                "[Passthrough Forwarder] Account {} received {} (rate limited/auth error). Cooldown set for 300s. Rotating account...",
+                "[Passthrough Forwarder] Account {} received {} (rate limited/auth error): {}. Cooldown set for 300s. Rotating account...",
                 account.email,
-                status
+                status,
+                String::from_utf8_lossy(&error_body)
             );
             continue;
         }
@@ -1404,9 +1444,13 @@ async fn handle_passthrough_forwarding(
                             continue;
                         }
 
-                        let first_stream = futures_util::stream::once(
-                            futures_util::future::ready(Ok::<Bytes, reqwest::Error>(chunk)),
-                        );
+                        let first_stream =
+                            futures_util::stream::once(futures_util::future::ready(Ok::<
+                                Bytes,
+                                reqwest::Error,
+                            >(
+                                chunk
+                            )));
                         let combined_stream = first_stream.chain(stream);
                         let mut resp = Response::new(Body::from_stream(combined_stream));
                         *resp.status_mut() = StatusCode::OK;
@@ -1580,8 +1624,8 @@ mod tests {
     use super::{
         browser_session_can_authorize, constant_time_token_matches, cookie_value, escape_html,
         has_valid_master_credential, is_early_quota_error, is_google_cloud_code_traffic,
-        is_passthrough_path, is_valid_email, normalize_google_tunnel_target,
-        token_fingerprint, PublicAccount,
+        is_passthrough_path, is_valid_email, normalize_google_tunnel_target, token_fingerprint,
+        PublicAccount,
     };
     use crate::models::Account;
     use axum::http::{header, HeaderMap, HeaderValue};
@@ -1711,13 +1755,16 @@ mod tests {
         let err_plain_json = b"{\"error\": {\"code\": 429, \"message\": \"Quota exceeded\"}}";
         assert!(is_early_quota_error(err_plain_json));
 
-        let err_403_rate = b"data: {\"error\": {\"code\": 403, \"message\": \"Rate limit exceeded\"}}\n\n";
+        let err_403_rate =
+            b"data: {\"error\": {\"code\": 403, \"message\": \"Rate limit exceeded\"}}\n\n";
         assert!(is_early_quota_error(err_403_rate));
 
-        let valid_meta = b"data: {\"__cloudCodeMeta\": {\"traceId\": \"projects/123/traces/456\"}}\n\n";
+        let valid_meta =
+            b"data: {\"__cloudCodeMeta\": {\"traceId\": \"projects/123/traces/456\"}}\n\n";
         assert!(!is_early_quota_error(valid_meta));
 
-        let valid_candidate = b"data: {\"response\": {\"candidates\": [{\"content\": {\"role\": \"model\"}}]}}\n\n";
+        let valid_candidate =
+            b"data: {\"response\": {\"candidates\": [{\"content\": {\"role\": \"model\"}}]}}\n\n";
         assert!(!is_early_quota_error(valid_candidate));
 
         let empty = b"";
@@ -1726,7 +1773,9 @@ mod tests {
 
     #[test]
     fn validates_passthrough_paths() {
-        assert!(is_passthrough_path("/v1internal:streamGenerateContent?alt=sse"));
+        assert!(is_passthrough_path(
+            "/v1internal:streamGenerateContent?alt=sse"
+        ));
         assert!(is_passthrough_path("/v1internal/models"));
         assert!(is_passthrough_path("/v1/models"));
         assert!(is_passthrough_path("/v1:generateContent"));
@@ -1740,11 +1789,17 @@ mod tests {
         let mut headers = HeaderMap::new();
         assert!(!is_google_cloud_code_traffic(&headers));
 
-        headers.insert(header::USER_AGENT, HeaderValue::from_static("Antigravity/1.0.0"));
+        headers.insert(
+            header::USER_AGENT,
+            HeaderValue::from_static("Antigravity/1.0.0"),
+        );
         assert!(is_google_cloud_code_traffic(&headers));
 
         let mut headers2 = HeaderMap::new();
-        headers2.insert("x-goog-user-project", HeaderValue::from_static("aicode-consumers"));
+        headers2.insert(
+            "x-goog-user-project",
+            HeaderValue::from_static("aicode-consumers"),
+        );
         assert!(is_google_cloud_code_traffic(&headers2));
 
         let mut headers3 = HeaderMap::new();

@@ -47,17 +47,31 @@ impl Cli {
             "install" => Some(Self::install_binary()),
             "reinstall" => Some(Self::reinstall()),
             "uninstall" | "remove" => {
-                if args.iter().skip(2).any(|arg| arg == "--help" || arg == "-h") {
+                if args
+                    .iter()
+                    .skip(2)
+                    .any(|arg| arg == "--help" || arg == "-h")
+                {
                     println!("Cách sử dụng: aam uninstall [tùy chọn]");
                     println!();
                     println!("Tùy chọn:");
-                    println!("  --purge, -p       Xóa toàn bộ thư mục dữ liệu cấu hình và tài khoản");
-                    println!("  --keep-data       Giữ lại thư mục dữ liệu cấu hình mà không cần hỏi lại");
+                    println!(
+                        "  --purge, -p       Xóa toàn bộ thư mục dữ liệu cấu hình và tài khoản"
+                    );
+                    println!(
+                        "  --keep-data       Giữ lại thư mục dữ liệu cấu hình mà không cần hỏi lại"
+                    );
                     println!("  --help, -h        Xem hướng dẫn lệnh gỡ cài đặt");
                     Some(Ok(()))
                 } else {
-                    let purge = args.iter().skip(2).any(|arg| arg == "--purge" || arg == "-p");
-                    let keep_data = args.iter().skip(2).any(|arg| arg == "--keep-data" || arg == "--no-purge");
+                    let purge = args
+                        .iter()
+                        .skip(2)
+                        .any(|arg| arg == "--purge" || arg == "-p");
+                    let keep_data = args
+                        .iter()
+                        .skip(2)
+                        .any(|arg| arg == "--keep-data" || arg == "--no-purge");
                     Some(Self::uninstall(purge, keep_data))
                 }
             }
@@ -99,7 +113,9 @@ impl Cli {
                 if agent == Agent::Antigravity {
                     Self::handle_preference(sub_args).await
                 } else {
-                    println!("Lưu ý: Cấu hình ưu tiên mô hình (preference) chỉ áp dụng cho Antigravity.");
+                    println!(
+                        "Lưu ý: Cấu hình ưu tiên mô hình (preference) chỉ áp dụng cho Antigravity."
+                    );
                     println!("Dùng lệnh 'aam agy preference' để cấu hình.");
                     Ok(())
                 }
@@ -138,24 +154,35 @@ impl Cli {
         println!();
         println!("Các lệnh con khả dụng:");
         println!("  list, ls              Xem danh sách tài khoản (--active, --json)");
-        println!("  switch <# | ID>       Chuyển tài khoản đang hoạt động cho {}", name);
+        println!(
+            "  switch <# | ID>       Chuyển tài khoản đang hoạt động cho {}",
+            name
+        );
         println!("  refresh               Làm mới dữ liệu hạn ngạch ngay lập tức");
         println!("  auto-select           Tự động chọn tài khoản tối ưu nhất");
         println!("  settings              Xem hoặc cấu hình tự động chọn (--enable/--disable)");
         match agent {
             Agent::Antigravity => {
-                println!("  login                 Đăng nhập tài khoản Google OAuth qua trình duyệt");
-                println!("  add                   Thêm tài khoản thủ công (--email, --access-token...)");
+                println!(
+                    "  login                 Đăng nhập tài khoản Google OAuth qua trình duyệt"
+                );
+                println!(
+                    "  add                   Thêm tài khoản thủ công (--email, --access-token...)"
+                );
                 println!("  preference            Xem hoặc đổi cấu hình ưu tiên (auto | gemini | claude_gpt)");
                 println!("  reset                 Đặt lại thời gian chờ (cooldowns)");
             }
             Agent::Codex => {
-                println!("  login                 Đăng nhập thiết bị qua trình duyệt (Device OAuth)");
+                println!(
+                    "  login                 Đăng nhập thiết bị qua trình duyệt (Device OAuth)"
+                );
                 println!("  import                Nhập tài khoản từ Codex CLI cục bộ (--email)");
                 println!("  add                   Thêm tài khoản thủ công (--email, --token, --id-token)");
             }
             Agent::Claude => {
-                println!("  import                Nhập tài khoản từ Claude Code CLI cục bộ (--email)");
+                println!(
+                    "  import                Nhập tài khoản từ Claude Code CLI cục bộ (--email)"
+                );
                 println!("  add                   Thêm tài khoản thủ công (--email, --token)");
             }
         }
@@ -428,8 +455,7 @@ impl Cli {
                 use std::os::unix::process::CommandExt;
                 cmd.process_group(0);
             }
-            cmd.spawn()
-                .context("Không thể khởi chạy tiến trình nền")?;
+            cmd.spawn().context("Không thể khởi chạy tiến trình nền")?;
         }
 
         std::thread::sleep(std::time::Duration::from_millis(600));
@@ -437,14 +463,9 @@ impl Cli {
         if Self::is_relay_service_running(port) {
             println!("[aam] Dịch vụ đã khởi chạy thành công tại http://127.0.0.1:{port}");
         } else if Self::is_port_in_use(port) {
-            anyhow::bail!(
-                "Cổng {} đang phản hồi nhưng không phải Agent Relay",
-                port
-            );
+            anyhow::bail!("Cổng {} đang phản hồi nhưng không phải Agent Relay", port);
         } else {
-            println!(
-                "[aam] Đã gửi lệnh khởi chạy. Vui lòng kiểm tra lại bằng lệnh 'aam status'."
-            );
+            println!("[aam] Đã gửi lệnh khởi chạy. Vui lòng kiểm tra lại bằng lệnh 'aam status'.");
         }
 
         Ok(())
@@ -550,7 +571,9 @@ impl Cli {
 
         if is_running {
             println!("Giao diện quản lý: http://127.0.0.1:{port}");
-            println!("Dịch vụ đang tự động quét hạn ngạch và đồng bộ tài khoản tối ưu cho các agent.");
+            println!(
+                "Dịch vụ đang tự động quét hạn ngạch và đồng bộ tài khoản tối ưu cho các agent."
+            );
         } else {
             println!("Dùng 'aam' hoặc 'aam start' để chạy dịch vụ và mở giao diện.");
             println!("Dùng 'aam autostart' để tự động chạy liên tục kể cả khi restart máy.");
@@ -599,8 +622,7 @@ impl Cli {
                 Environment=\"PATH={}\"\n\n\
                 [Install]\n\
                 WantedBy=default.target\n",
-                bin_arg,
-                env_path
+                bin_arg, env_path
             );
 
             crate::storage::secure_file::atomic_write(
@@ -634,7 +656,9 @@ impl Cli {
                 .status()?;
 
             if status.success() {
-                println!("[aam] Đã kích hoạt chế độ tự động chạy cùng hệ thống (Auto-start on boot).");
+                println!(
+                    "[aam] Đã kích hoạt chế độ tự động chạy cùng hệ thống (Auto-start on boot)."
+                );
                 println!("       - Tự động chạy nền liên tục kể cả khi khởi động lại máy tính.");
                 println!("       - Tự động hồi phục và bật lại sau 3 giây nếu bị dừng.");
                 println!("       - Dùng lệnh 'aam stop' hoặc 'aam disable' khi muốn dừng.");
@@ -774,7 +798,10 @@ impl Cli {
                         let p = std::path::PathBuf::from(&path_str);
                         if let Some(p_parent) = p.parent() {
                             let parent_buf = p_parent.to_path_buf();
-                            if parent_buf.metadata().is_ok_and(|m| !m.permissions().readonly()) {
+                            if parent_buf
+                                .metadata()
+                                .is_ok_and(|m| !m.permissions().readonly())
+                            {
                                 agy_bin = parent_buf.join("agy-bin");
                                 agy_path = p;
                             }
@@ -1168,7 +1195,10 @@ fi
                     entries.len() == 1
                         && matches!(
                             entries[0],
-                            "agent-relay" | "./agent-relay" | "antigravity-relay" | "./antigravity-relay"
+                            "agent-relay"
+                                | "./agent-relay"
+                                | "antigravity-relay"
+                                | "./antigravity-relay"
                         ),
                     "Gói cập nhật chứa đường dẫn không mong đợi"
                 );
@@ -1301,7 +1331,9 @@ fi
         println!();
 
         if !is_running {
-            println!("Gợi ý: Dùng 'aam start' để khởi chạy dịch vụ hoặc 'aam tui' để vào giao diện.");
+            println!(
+                "Gợi ý: Dùng 'aam start' để khởi chạy dịch vụ hoặc 'aam tui' để vào giao diện."
+            );
             return Ok(());
         }
 
@@ -1322,7 +1354,10 @@ fi
             claude: false,
         });
 
-        println!("{:<13} {:<7} {:<36} {:<16} {:<12}", "Agent", "Số TK", "Tài khoản đang dùng", "Hạn ngạch", "Tự động chọn");
+        println!(
+            "{:<13} {:<7} {:<36} {:<16} {:<12}",
+            "Agent", "Số TK", "Tài khoản đang dùng", "Hạn ngạch", "Tự động chọn"
+        );
         println!("{:-<13} {:-<7} {:-<36} {:-<16} {:-<12}", "", "", "", "", "");
 
         // Antigravity
@@ -1350,7 +1385,10 @@ fi
                 "--".to_string()
             };
             let auto_str = if flags.antigravity { "Bật" } else { "Tắt" };
-            println!("{:<13} {:<7} {:<36} {:<16} {:<12}", "Antigravity", count, active_str, quota_str, auto_str);
+            println!(
+                "{:<13} {:<7} {:<36} {:<16} {:<12}",
+                "Antigravity", count, active_str, quota_str, auto_str
+            );
         }
 
         // Codex
@@ -1378,7 +1416,10 @@ fi
                 "--".to_string()
             };
             let auto_str = if flags.codex { "Bật" } else { "Tắt" };
-            println!("{:<13} {:<7} {:<36} {:<16} {:<12}", "Codex", count, active_str, quota_str, auto_str);
+            println!(
+                "{:<13} {:<7} {:<36} {:<16} {:<12}",
+                "Codex", count, active_str, quota_str, auto_str
+            );
         }
 
         // Claude
@@ -1406,17 +1447,24 @@ fi
                 "--".to_string()
             };
             let auto_str = if flags.claude { "Bật" } else { "Tắt" };
-            println!("{:<13} {:<7} {:<36} {:<16} {:<12}", "Claude", count, active_str, quota_str, auto_str);
+            println!(
+                "{:<13} {:<7} {:<36} {:<16} {:<12}",
+                "Claude", count, active_str, quota_str, auto_str
+            );
         }
 
         println!();
         println!("Quản lý theo từng agent:");
-        println!("  • aam agy <lệnh>      Quản lý Antigravity (list, switch, login, add, preference...)");
+        println!(
+            "  • aam agy <lệnh>      Quản lý Antigravity (list, switch, login, add, preference...)"
+        );
         println!("  • aam codex <lệnh>    Quản lý Codex (list, switch, login, import, add...)");
         println!("  • aam claude <lệnh>   Quản lý Claude (list, switch, import, add...)");
         println!();
         println!("Lệnh chung:");
-        println!("  • aam                 Xem bảng danh sách tài khoản toàn bộ agent (hoặc 'aam list')");
+        println!(
+            "  • aam                 Xem bảng danh sách tài khoản toàn bộ agent (hoặc 'aam list')"
+        );
         println!("  • aam tui             Mở giao diện terminal tương tác toàn màn hình");
         println!("  • aam web             Mở bảng điều khiển web trên trình duyệt");
         println!("  • aam help            Xem danh sách đầy đủ các lệnh");
@@ -1454,7 +1502,9 @@ fi
                     println!();
                     println!("Tùy chọn:");
                     if scoped_agent.is_none() {
-                        println!("  -a, --agent <agent>   Lọc theo agent (antigravity, codex, claude)");
+                        println!(
+                            "  -a, --agent <agent>   Lọc theo agent (antigravity, codex, claude)"
+                        );
                     }
                     println!("  --active              Chỉ hiển thị tài khoản đang hoạt động");
                     println!("  --json                Xuất dữ liệu định dạng json");
@@ -1483,8 +1533,15 @@ fi
                 Agent::Codex => "codex",
                 Agent::Claude => "claude",
             };
-            println!("Tổng cộng: {} tài khoản ({} đang hoạt động).", accounts.len(), active_count);
-            println!("Gợi ý: Dùng 'aam {} switch <# hoặc email>' để chuyển tài khoản.", alias);
+            println!(
+                "Tổng cộng: {} tài khoản ({} đang hoạt động).",
+                accounts.len(),
+                active_count
+            );
+            println!(
+                "Gợi ý: Dùng 'aam {} switch <# hoặc email>' để chuyển tài khoản.",
+                alias
+            );
         } else {
             let mut all_accounts = client.list_all_accounts().await?;
             if active_only {
@@ -1510,7 +1567,11 @@ fi
 
             let total_active = all_accounts.iter().filter(|a| a.is_active).count();
             println!();
-            println!("Tổng cộng: {} tài khoản trên toàn bộ agent ({} đang hoạt động).", all_accounts.len(), total_active);
+            println!(
+                "Tổng cộng: {} tài khoản trên toàn bộ agent ({} đang hoạt động).",
+                all_accounts.len(),
+                total_active
+            );
             println!("Gợi ý:");
             println!("  • Chuyển tài khoản theo số thứ tự của agent: 'aam agy switch <#>' hoặc 'aam codex switch <#>'");
             println!("  • Chuyển tài khoản theo số thứ tự hoặc email: 'aam switch <# | email>'");
@@ -1535,9 +1596,24 @@ fi
 
         let detail_width = if agent == Agent::Antigravity { 62 } else { 46 };
 
-        println!("=== {} ({} tài khoản · {} đang hoạt động) ===", agent.name(), accounts.len(), active_count);
-        println!("{:<4} {:<12} {:<36} {}", "#", "Trạng thái", "Email", "Chi tiết");
-        println!("{:-<4} {:-<12} {:-<36} {:-<width$}", "", "", "", "", width = detail_width);
+        println!(
+            "=== {} ({} tài khoản · {} đang hoạt động) ===",
+            agent.name(),
+            accounts.len(),
+            active_count
+        );
+        println!(
+            "{:<4} {:<12} {:<36} {}",
+            "#", "Trạng thái", "Email", "Chi tiết"
+        );
+        println!(
+            "{:-<4} {:-<12} {:-<36} {:-<width$}",
+            "",
+            "",
+            "",
+            "",
+            width = detail_width
+        );
 
         for (idx, acc) in accounts.iter().enumerate() {
             let num = format!("[{:>2}]", idx + 1);
@@ -1596,12 +1672,16 @@ fi
                         .collect();
 
                     if !bucket_texts.is_empty() {
-                        group_parts.push((grp_rank, format!("{}: {}", grp_label, bucket_texts.join(" · "))));
+                        group_parts.push((
+                            grp_rank,
+                            format!("{}: {}", grp_label, bucket_texts.join(" · ")),
+                        ));
                     }
                 }
 
                 group_parts.sort_by_key(|(rank, _)| *rank);
-                let group_texts: Vec<String> = group_parts.into_iter().map(|(_, text)| text).collect();
+                let group_texts: Vec<String> =
+                    group_parts.into_iter().map(|(_, text)| text).collect();
                 if group_texts.is_empty() {
                     acc.status.clone()
                 } else {
@@ -1633,12 +1713,14 @@ fi
                             .filter(|cd| cd != "đã đến giờ")
                             .map(|cd| format!(" ({})", cd))
                             .unwrap_or_default();
-                        detail_parts.push((win_rank, format!("{}: {:.0}%{}", win, pct, reset_suffix)));
+                        detail_parts
+                            .push((win_rank, format!("{}: {:.0}%{}", win, pct, reset_suffix)));
                     }
                 }
 
                 detail_parts.sort_by_key(|(rank, _)| *rank);
-                let detail_texts: Vec<String> = detail_parts.into_iter().map(|(_, text)| text).collect();
+                let detail_texts: Vec<String> =
+                    detail_parts.into_iter().map(|(_, text)| text).collect();
                 if detail_texts.is_empty() {
                     acc.status.clone()
                 } else {
@@ -1649,7 +1731,10 @@ fi
             let truncated_detail = Self::truncate_str(&detail_str, detail_width - 1);
             let email_display = Self::truncate_str(&acc.email, 35);
 
-            println!("{:<4} {:<12} {:<36} {}", num, status_str, email_display, truncated_detail);
+            println!(
+                "{:<4} {:<12} {:<36} {}",
+                num, status_str, email_display, truncated_detail
+            );
         }
     }
 
@@ -1674,11 +1759,16 @@ fi
                         Some(Agent::Claude) => "aam claude",
                         None => "aam",
                     };
-                    println!("Cách sử dụng: {} switch <# | ID | email> [tùy chọn]", prefix);
+                    println!(
+                        "Cách sử dụng: {} switch <# | ID | email> [tùy chọn]",
+                        prefix
+                    );
                     println!();
                     println!("Tùy chọn:");
                     if scoped_agent.is_none() {
-                        println!("  -a, --agent <agent>   Chỉ định agent (antigravity, codex, claude)");
+                        println!(
+                            "  -a, --agent <agent>   Chỉ định agent (antigravity, codex, claude)"
+                        );
                     }
                     println!("  -h, --help            Xem hướng dẫn lệnh switch");
                     return Ok(());
@@ -1714,7 +1804,11 @@ fi
 
         let matched = Self::find_account(&accounts, &target)?;
         client.switch_account(matched.agent, &matched.id).await?;
-        println!("✓ Đã chuyển sang tài khoản {} ({}) thành công.", matched.email, matched.agent.name());
+        println!(
+            "✓ Đã chuyển sang tài khoản {} ({}) thành công.",
+            matched.email,
+            matched.agent.name()
+        );
         Ok(())
     }
 
@@ -1771,7 +1865,9 @@ fi
                     println!("Tùy chọn giá trị:");
                     println!("  auto        Tự động chọn tài khoản theo mô hình vừa dùng gần nhất");
                     println!("  gemini      Luôn ưu tiên tài khoản có hạn ngạch Gemini cao nhất");
-                    println!("  claude_gpt  Luôn ưu tiên tài khoản có hạn ngạch Claude & GPT cao nhất");
+                    println!(
+                        "  claude_gpt  Luôn ưu tiên tài khoản có hạn ngạch Claude & GPT cao nhất"
+                    );
                     return Ok(());
                 }
                 val if !val.starts_with('-') && new_pref.is_none() => {
@@ -1852,9 +1948,13 @@ fi
                     println!();
                     println!("Tùy chọn:");
                     if scoped_agent.is_none() {
-                        println!("  -a, --agent <agent>         Chỉ định agent (mặc định: antigravity)");
+                        println!(
+                            "  -a, --agent <agent>         Chỉ định agent (mặc định: antigravity)"
+                        );
                     }
-                    println!("  -m, --model <model>         Chỉ định mô hình để chọn tài khoản tối ưu");
+                    println!(
+                        "  -m, --model <model>         Chỉ định mô hình để chọn tài khoản tối ưu"
+                    );
                     println!("  -c, --continue              Tối ưu theo mô hình của phiên làm việc gần nhất");
                     println!("      --conversation <id>     Tối ưu theo mô hình của phiên làm việc chỉ định");
                     return Ok(());
@@ -1894,7 +1994,10 @@ fi
                         Some(Agent::Claude) => "aam claude",
                         None => "aam",
                     };
-                    println!("Cách sử dụng: {} delete <# | ID | email> [tùy chọn]", prefix);
+                    println!(
+                        "Cách sử dụng: {} delete <# | ID | email> [tùy chọn]",
+                        prefix
+                    );
                     println!();
                     println!("Tùy chọn:");
                     if scoped_agent.is_none() {
@@ -1917,7 +2020,10 @@ fi
                 Some(Agent::Claude) => "aam claude",
                 None => "aam",
             };
-            bail!("Thiếu định danh tài khoản cần xóa. Cách dùng: {} delete <# | ID | email>", prefix);
+            bail!(
+                "Thiếu định danh tài khoản cần xóa. Cách dùng: {} delete <# | ID | email>",
+                prefix
+            );
         };
 
         let client = ApiClient::new();
@@ -1930,7 +2036,11 @@ fi
         let matched = Self::find_account(&accounts, &target)?;
 
         if !auto_confirm {
-            print!("Bạn có chắc chắn muốn xóa tài khoản {} ({})? [y/N]: ", matched.email, matched.agent.name());
+            print!(
+                "Bạn có chắc chắn muốn xóa tài khoản {} ({})? [y/N]: ",
+                matched.email,
+                matched.agent.name()
+            );
             std::io::stdout().flush()?;
             let mut input = String::new();
             std::io::stdin().read_line(&mut input)?;
@@ -1942,7 +2052,11 @@ fi
         }
 
         client.delete_account(matched.agent, &matched.id).await?;
-        println!("✓ Đã xóa tài khoản {} ({}) thành công.", matched.email, matched.agent.name());
+        println!(
+            "✓ Đã xóa tài khoản {} ({}) thành công.",
+            matched.email,
+            matched.agent.name()
+        );
         Ok(())
     }
 
@@ -1973,7 +2087,9 @@ fi
                     println!();
                     println!("Tùy chọn:");
                     if scoped_agent.is_none() {
-                        println!("  -a, --agent <agent>   Chỉ định agent (antigravity, codex, claude)");
+                        println!(
+                            "  -a, --agent <agent>   Chỉ định agent (antigravity, codex, claude)"
+                        );
                     }
                     println!("  --enable              Bật tự động chọn tài khoản cho agent");
                     println!("  --disable             Tắt tự động chọn tài khoản cho agent");
@@ -1988,7 +2104,11 @@ fi
             let agent = agent_filter.unwrap_or(Agent::Antigravity);
             client.set_agent_setting(agent, enabled).await?;
             let state_str = if enabled { "bật" } else { "tắt" };
-            println!("✓ Đã {} chế độ tự động chọn tài khoản cho {}.", state_str, agent.name());
+            println!(
+                "✓ Đã {} chế độ tự động chọn tài khoản cho {}.",
+                state_str,
+                agent.name()
+            );
         } else if let Some(agent) = agent_filter {
             let flags = client.get_agent_settings().await?;
             let is_enabled = flags.is_enabled(agent);
@@ -2000,13 +2120,25 @@ fi
                 Agent::Codex => "codex",
                 Agent::Claude => "claude",
             };
-            println!("Thay đổi cài đặt: aam {} settings [--enable | --disable]", alias);
+            println!(
+                "Thay đổi cài đặt: aam {} settings [--enable | --disable]",
+                alias
+            );
         } else {
             let flags = client.get_agent_settings().await?;
             println!("Cài đặt tự động chọn tài khoản (auto-selection):");
-            println!("  • Antigravity:  {}", if flags.antigravity { "Bật" } else { "Tắt" });
-            println!("  • Codex:        {}", if flags.codex { "Bật" } else { "Tắt" });
-            println!("  • Claude:       {}", if flags.claude { "Bật" } else { "Tắt" });
+            println!(
+                "  • Antigravity:  {}",
+                if flags.antigravity { "Bật" } else { "Tắt" }
+            );
+            println!(
+                "  • Codex:        {}",
+                if flags.codex { "Bật" } else { "Tắt" }
+            );
+            println!(
+                "  • Claude:       {}",
+                if flags.claude { "Bật" } else { "Tắt" }
+            );
             println!();
             println!("Thay đổi cấu hình: aam <agent> settings [--enable | --disable]");
         }
@@ -2056,7 +2188,10 @@ fi
                             println!("  --expires-in <giây>         Thời gian hiệu lực của token");
                         }
                         Agent::Codex => {
-                            println!("Cách sử dụng: {} add --email <email> --token <token> [tùy chọn]", prefix);
+                            println!(
+                                "Cách sử dụng: {} add --email <email> --token <token> [tùy chọn]",
+                                prefix
+                            );
                             println!();
                             println!("Tùy chọn:");
                             println!("  --email <email>             Email tài khoản Codex");
@@ -2064,10 +2199,15 @@ fi
                             println!("  --id-token <token>          ID token (tùy chọn)");
                         }
                         Agent::Claude => {
-                            println!("Cách sử dụng: {} add --email <email> --token <token>", prefix);
+                            println!(
+                                "Cách sử dụng: {} add --email <email> --token <token>",
+                                prefix
+                            );
                             println!();
                             println!("Tùy chọn:");
-                            println!("  --email <email>             Email hoặc định danh tài khoản");
+                            println!(
+                                "  --email <email>             Email hoặc định danh tài khoản"
+                            );
                             println!("  --token <token>             Session token của Claude Code");
                         }
                     }
@@ -2088,12 +2228,7 @@ fi
                     bail!("Thiếu access token (--access-token)");
                 };
                 client
-                    .add_antigravity_account(
-                        &email,
-                        &token,
-                        refresh_token.as_deref(),
-                        expires_in,
-                    )
+                    .add_antigravity_account(&email, &token, refresh_token.as_deref(), expires_in)
                     .await?;
                 println!("✓ Đã thêm tài khoản Antigravity {} thành công.", email);
             }
@@ -2106,7 +2241,13 @@ fi
                 if let Some(id_tok) = id_token {
                     creds_map.insert("id_token".to_string(), serde_json::json!(id_tok));
                 }
-                client.import_native_account(Agent::Codex, &email, Some(serde_json::Value::Object(creds_map))).await?;
+                client
+                    .import_native_account(
+                        Agent::Codex,
+                        &email,
+                        Some(serde_json::Value::Object(creds_map)),
+                    )
+                    .await?;
                 println!("✓ Đã thêm tài khoản Codex {} thành công.", email);
             }
             Agent::Claude => {
@@ -2115,7 +2256,13 @@ fi
                 };
                 let mut creds_map = serde_json::Map::new();
                 creds_map.insert("token".to_string(), serde_json::json!(token));
-                client.import_native_account(Agent::Claude, &email, Some(serde_json::Value::Object(creds_map))).await?;
+                client
+                    .import_native_account(
+                        Agent::Claude,
+                        &email,
+                        Some(serde_json::Value::Object(creds_map)),
+                    )
+                    .await?;
                 println!("✓ Đã thêm tài khoản Claude {} thành công.", email);
             }
         }
@@ -2147,7 +2294,10 @@ fi
                         Some(Agent::Claude) => "aam claude",
                         _ => "aam",
                     };
-                    println!("Cách sử dụng: {} import [--email <email>] [--token <token>]", prefix);
+                    println!(
+                        "Cách sử dụng: {} import [--email <email>] [--token <token>]",
+                        prefix
+                    );
                     println!();
                     println!("Ghi chú: Nếu không truyền --token, hệ thống sẽ tự động nhập phiên đăng nhập hiện tại từ CLI cục bộ.");
                     return Ok(());
@@ -2172,7 +2322,11 @@ fi
         let creds = token.map(|t| serde_json::json!({ "token": t }));
         let client = ApiClient::new();
         client.import_native_account(agent, &email, creds).await?;
-        println!("✓ Đã nhập tài khoản {} cho {} thành công.", email, agent.name());
+        println!(
+            "✓ Đã nhập tài khoản {} cho {} thành công.",
+            email,
+            agent.name()
+        );
         Ok(())
     }
 
@@ -2239,7 +2393,9 @@ fi
             }
             Agent::Claude => {
                 println!("Claude không hỗ trợ đăng nhập OAuth trực tiếp qua CLI.");
-                println!("Vui lòng đăng nhập qua CLI của Claude hoặc dùng lệnh 'aam claude import'.");
+                println!(
+                    "Vui lòng đăng nhập qua CLI của Claude hoặc dùng lệnh 'aam claude import'."
+                );
             }
         }
         Ok(())
@@ -2257,11 +2413,17 @@ fi
             "antigravity" | "anti" | "ag" | "agy" => Ok(Agent::Antigravity),
             "codex" => Ok(Agent::Codex),
             "claude" => Ok(Agent::Claude),
-            _ => bail!("Tên agent không hợp lệ: '{}'. Chỉ chấp nhận: antigravity (agy), codex, claude", val),
+            _ => bail!(
+                "Tên agent không hợp lệ: '{}'. Chỉ chấp nhận: antigravity (agy), codex, claude",
+                val
+            ),
         }
     }
 
-    fn find_account<'a>(accounts: &'a [UnifiedAccountDto], target: &str) -> Result<&'a UnifiedAccountDto> {
+    fn find_account<'a>(
+        accounts: &'a [UnifiedAccountDto],
+        target: &str,
+    ) -> Result<&'a UnifiedAccountDto> {
         if let Ok(idx) = target.parse::<usize>() {
             if idx >= 1 && idx <= accounts.len() {
                 return Ok(&accounts[idx - 1]);
@@ -2272,23 +2434,38 @@ fi
         if let Some(acc) = accounts.iter().find(|a| a.id == target) {
             return Ok(acc);
         }
-        if let Some(acc) = accounts.iter().find(|a| a.email.to_lowercase() == target_lower) {
+        if let Some(acc) = accounts
+            .iter()
+            .find(|a| a.email.to_lowercase() == target_lower)
+        {
             return Ok(acc);
         }
-        let id_matches: Vec<_> = accounts.iter().filter(|a| a.id.starts_with(target)).collect();
+        let id_matches: Vec<_> = accounts
+            .iter()
+            .filter(|a| a.id.starts_with(target))
+            .collect();
         if id_matches.len() == 1 {
             return Ok(id_matches[0]);
         }
-        let email_matches: Vec<_> = accounts.iter().filter(|a| a.email.to_lowercase().contains(&target_lower)).collect();
+        let email_matches: Vec<_> = accounts
+            .iter()
+            .filter(|a| a.email.to_lowercase().contains(&target_lower))
+            .collect();
         if email_matches.len() == 1 {
             return Ok(email_matches[0]);
         }
 
         if id_matches.len() > 1 || email_matches.len() > 1 {
-            bail!("Có nhiều tài khoản khớp với '{}'. Vui lòng dùng số thứ tự (#) hoặc ID đầy đủ.", target);
+            bail!(
+                "Có nhiều tài khoản khớp với '{}'. Vui lòng dùng số thứ tự (#) hoặc ID đầy đủ.",
+                target
+            );
         }
 
-        bail!("Không tìm thấy tài khoản phù hợp với '{}'. Gõ 'aam list' để xem danh sách.", target);
+        bail!(
+            "Không tìm thấy tài khoản phù hợp với '{}'. Gõ 'aam list' để xem danh sách.",
+            target
+        );
     }
 
     pub fn open_url(url: &str) -> Result<()> {
@@ -2359,12 +2536,16 @@ fi
         println!();
         println!("Kiểm tra và thao tác chung (toàn bộ agent):");
         println!("  aam                   Xem bảng danh sách tài khoản toàn bộ agent (tương đương 'aam list')");
-        println!("  aam check             Kiểm tra tổng quan trạng thái dịch vụ và tài khoản các agent");
+        println!(
+            "  aam check             Kiểm tra tổng quan trạng thái dịch vụ và tài khoản các agent"
+        );
         println!("  aam list              Xem bảng danh sách tài khoản của toàn bộ agent");
         println!("  aam switch <# | ID>   Chuyển tài khoản đang hoạt động");
         println!("  aam refresh           Làm mới hạn ngạch cho toàn bộ agent");
         println!("  aam tui               Mở giao diện terminal tương tác toàn màn hình");
-        println!("  aam web               Mở bảng điều khiển web trên trình duyệt (hoặc 'aam open')");
+        println!(
+            "  aam web               Mở bảng điều khiển web trên trình duyệt (hoặc 'aam open')"
+        );
         println!();
         println!("Quản lý dịch vụ hệ thống:");
         println!("  aam start             Khởi chạy dịch vụ chạy ngầm");
@@ -2415,16 +2596,33 @@ mod tests {
 
     #[test]
     fn parses_uninstall_flags_correctly() {
-        let purge_args = vec!["aam".to_string(), "uninstall".to_string(), "--purge".to_string()];
-        let is_purge = purge_args.iter().skip(2).any(|arg| arg == "--purge" || arg == "-p");
+        let purge_args = vec![
+            "aam".to_string(),
+            "uninstall".to_string(),
+            "--purge".to_string(),
+        ];
+        let is_purge = purge_args
+            .iter()
+            .skip(2)
+            .any(|arg| arg == "--purge" || arg == "-p");
         assert!(is_purge);
 
         let short_purge_args = vec!["aam".to_string(), "uninstall".to_string(), "-p".to_string()];
-        let is_short_purge = short_purge_args.iter().skip(2).any(|arg| arg == "--purge" || arg == "-p");
+        let is_short_purge = short_purge_args
+            .iter()
+            .skip(2)
+            .any(|arg| arg == "--purge" || arg == "-p");
         assert!(is_short_purge);
 
-        let keep_args = vec!["aam".to_string(), "uninstall".to_string(), "--keep-data".to_string()];
-        let is_keep = keep_args.iter().skip(2).any(|arg| arg == "--keep-data" || arg == "--no-purge");
+        let keep_args = vec![
+            "aam".to_string(),
+            "uninstall".to_string(),
+            "--keep-data".to_string(),
+        ];
+        let is_keep = keep_args
+            .iter()
+            .skip(2)
+            .any(|arg| arg == "--keep-data" || arg == "--no-purge");
         assert!(is_keep);
     }
 
@@ -2471,18 +2669,36 @@ mod tests {
         ];
 
         // 1. By index (#)
-        assert_eq!(Cli::find_account(&accounts, "1").unwrap().email, "alpha@gmail.com");
-        assert_eq!(Cli::find_account(&accounts, "2").unwrap().email, "beta@company.com");
+        assert_eq!(
+            Cli::find_account(&accounts, "1").unwrap().email,
+            "alpha@gmail.com"
+        );
+        assert_eq!(
+            Cli::find_account(&accounts, "2").unwrap().email,
+            "beta@company.com"
+        );
 
         // 2. By exact email
-        assert_eq!(Cli::find_account(&accounts, "alpha@gmail.com").unwrap().id, "11112222-3333-4444-5555-666677778888");
+        assert_eq!(
+            Cli::find_account(&accounts, "alpha@gmail.com").unwrap().id,
+            "11112222-3333-4444-5555-666677778888"
+        );
 
         // 3. By email substring
-        assert_eq!(Cli::find_account(&accounts, "beta").unwrap().email, "beta@company.com");
+        assert_eq!(
+            Cli::find_account(&accounts, "beta").unwrap().email,
+            "beta@company.com"
+        );
 
         // 4. By ID prefix
-        assert_eq!(Cli::find_account(&accounts, "11112222").unwrap().email, "alpha@gmail.com");
-        assert_eq!(Cli::find_account(&accounts, "aaaa2222").unwrap().email, "beta@company.com");
+        assert_eq!(
+            Cli::find_account(&accounts, "11112222").unwrap().email,
+            "alpha@gmail.com"
+        );
+        assert_eq!(
+            Cli::find_account(&accounts, "aaaa2222").unwrap().email,
+            "beta@company.com"
+        );
 
         // 5. Not found
         assert!(Cli::find_account(&accounts, "nonexistent").is_err());
@@ -2492,13 +2708,16 @@ mod tests {
     #[tokio::test]
     async fn routes_agent_commands_correctly() {
         // Agent help routes
-        let res = Cli::handle_args(&["aam".to_string(), "agy".to_string(), "help".to_string()]).await;
+        let res =
+            Cli::handle_args(&["aam".to_string(), "agy".to_string(), "help".to_string()]).await;
         assert!(matches!(res, Some(Ok(()))));
 
-        let res = Cli::handle_args(&["aam".to_string(), "codex".to_string(), "help".to_string()]).await;
+        let res =
+            Cli::handle_args(&["aam".to_string(), "codex".to_string(), "help".to_string()]).await;
         assert!(matches!(res, Some(Ok(()))));
 
-        let res = Cli::handle_args(&["aam".to_string(), "claude".to_string(), "help".to_string()]).await;
+        let res =
+            Cli::handle_args(&["aam".to_string(), "claude".to_string(), "help".to_string()]).await;
         assert!(matches!(res, Some(Ok(()))));
 
         // General help and version routes
