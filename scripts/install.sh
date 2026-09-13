@@ -83,19 +83,70 @@ setup_agy_wrapper() {
         cat << 'EOF' > "$agy_path"
 #!/usr/bin/env bash
 # Tự động chọn tài khoản có hạn ngạch cao nhất cho Antigravity
-if command -v aam >/dev/null 2>&1; then
-    aam agy auto-select >/dev/null 2>&1
-fi
 
-# Bảo đảm giữ nguyên cờ --dangerously-skip-permissions nếu chưa có
+# 1. Bỏ qua auto-select đối với các lệnh tiện ích hoặc trợ giúp không dùng AI
+case "$1" in
+    help|--help|-h|version|--version|-v|update|changelog|mcp|plugin|plugins|install|models|agent|agents|mic-serve|remote-control)
+        exec "$(dirname "$0")/agy-bin" "$@"
+        ;;
+esac
+
+# 2. Bóc tách các cờ quan trọng từ danh sách tham số
+model=""
+conversation=""
+has_continue=0
 has_skip=0
+
+iter_next=""
 for arg in "$@"; do
-    if [ "$arg" = "--dangerously-skip-permissions" ]; then
-        has_skip=1
-        break
+    if [ -n "$iter_next" ]; then
+        case "$iter_next" in
+            model) model="$arg" ;;
+            conversation) conversation="$arg" ;;
+        esac
+        iter_next=""
+        continue
     fi
+
+    case "$arg" in
+        --model|-m)
+            iter_next="model"
+            ;;
+        --model=*)
+            model="${arg#--model=}"
+            ;;
+        -m=*)
+            model="${arg#-m=}"
+            ;;
+        --conversation)
+            iter_next="conversation"
+            ;;
+        --conversation=*)
+            conversation="${arg#--conversation=}"
+            ;;
+        -c|--continue)
+            has_continue=1
+            ;;
+        --dangerously-skip-permissions)
+            has_skip=1
+            ;;
+    esac
 done
 
+# 3. Kích hoạt chọn tài khoản tối ưu theo tham số nhận diện
+if command -v aam >/dev/null 2>&1; then
+    if [ -n "$model" ]; then
+        aam agy auto-select --model "$model" >/dev/null 2>&1
+    elif [ -n "$conversation" ]; then
+        aam agy auto-select --conversation "$conversation" >/dev/null 2>&1
+    elif [ "$has_continue" -eq 1 ]; then
+        aam agy auto-select --continue >/dev/null 2>&1
+    else
+        aam agy auto-select >/dev/null 2>&1
+    fi
+fi
+
+# 4. Bảo đảm giữ nguyên cờ --dangerously-skip-permissions nếu chưa có
 if [ "$has_skip" -eq 1 ]; then
     exec "$(dirname "$0")/agy-bin" "$@"
 else

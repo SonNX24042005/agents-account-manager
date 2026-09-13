@@ -10,7 +10,7 @@ use tokio::sync::RwLock;
 pub struct TokenManager {
     accounts: Arc<RwLock<Vec<Account>>>,
     store: Arc<AccountStore>,
-    model_detector: Arc<ModelDetector>,
+    pub model_detector: Arc<ModelDetector>,
     pub settings: Arc<SelectionSettings>,
     switch_writer: fn(&Account) -> Result<()>,
     auth_path: Option<std::path::PathBuf>,
@@ -101,17 +101,16 @@ impl TokenManager {
         Ok(())
     }
 
-    /// Automatically selects and switches to the account with the highest quota for the currently active model category
-    pub async fn select_best_account_for_active_model(
+    /// Automatically selects and switches to the account with the highest quota for a specified model category
+    pub async fn select_best_account_for_category(
         &self,
+        target_category: TargetModelCategory,
     ) -> Result<(Account, TargetModelCategory)> {
         self.sync_active_account_from_disk().await;
         let list = self.accounts.read().await.clone();
         if list.is_empty() {
             return Err(anyhow!("No accounts in pool"));
         }
-
-        let target_category = self.model_detector.get_effective_category();
 
         let eligible: Vec<Account> = list
             .into_iter()
@@ -132,28 +131,29 @@ impl TokenManager {
 
         let best = eligible
             .into_iter()
-            .max_by(|a, b| {
-                let score_a = a.get_effective_quota_for_category(target_category);
-                let score_b = b.get_effective_quota_for_category(target_category);
-
-                score_a
-                    .partial_cmp(&score_b)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    .then_with(|| a.is_active.cmp(&b.is_active))
-            })
+            .max_by(|a, b| a.compare_quota_priority(b, target_category))
             .ok_or_else(|| anyhow!("Failed to select best account"))?;
 
         if !best.is_active {
             self.switch_account(&best.id).await?;
         }
         tracing::info!(
-            "[TokenManager] Auto-selected account {} for category {:?} (score: {:.1}%)",
+            "[TokenManager] Auto-selected account {} for category {:?} (5h: {:.1}%, weekly: {:.1}%)",
             best.email,
             target_category,
-            best.get_effective_quota_for_category(target_category)
+            best.get_effective_quota_for_category(target_category),
+            best.get_weekly_quota_for_category(target_category)
         );
 
         Ok((best, target_category))
+    }
+
+    /// Automatically selects and switches to the account with the highest quota for the currently active model category
+    pub async fn select_best_account_for_active_model(
+        &self,
+    ) -> Result<(Account, TargetModelCategory)> {
+        let target_category = self.model_detector.get_effective_category();
+        self.select_best_account_for_category(target_category).await
     }
 
     #[allow(dead_code)]
@@ -227,12 +227,7 @@ impl TokenManager {
         }
         list.iter()
             .filter(eligible)
-            .max_by(|a, b| {
-                a.get_effective_quota_for_category(category)
-                    .partial_cmp(&b.get_effective_quota_for_category(category))
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    .then_with(|| a.is_active.cmp(&b.is_active))
-            })
+            .max_by(|a, b| a.compare_quota_priority(b, category))
             .cloned()
             .ok_or_else(|| anyhow!("Không có tài khoản còn quota"))
     }

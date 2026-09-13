@@ -620,8 +620,40 @@ async fn handle_switch_account(
     }
 }
 
-async fn handle_auto_select_highest_gemini(State(state): State<AppState>) -> impl IntoResponse {
-    match state.token_manager.select_best_account_for_active_model().await {
+#[derive(Debug, Deserialize, Default)]
+struct AutoSelectRequest {
+    model: Option<String>,
+    conversation: Option<String>,
+}
+
+async fn handle_auto_select_highest_gemini(
+    State(state): State<AppState>,
+    body: axum::body::Bytes,
+) -> impl IntoResponse {
+    let payload: Option<AutoSelectRequest> = if !body.is_empty() {
+        serde_json::from_slice(&body).ok()
+    } else {
+        None
+    };
+
+    let target_category = if let Some(ref model) = payload.as_ref().and_then(|p| p.model.as_ref()) {
+        state.token_manager.model_detector.record_cli_model_hint(model);
+        crate::proxy::model_detector::TargetModelCategory::from_model_name(model)
+    } else if let Some(ref conv_id) = payload.as_ref().and_then(|p| p.conversation.as_ref()) {
+        state
+            .token_manager
+            .model_detector
+            .record_conversation_hint(conv_id)
+            .unwrap_or_else(|| state.token_manager.model_detector.get_effective_category())
+    } else {
+        state.token_manager.model_detector.get_effective_category()
+    };
+
+    match state
+        .token_manager
+        .select_best_account_for_category(target_category)
+        .await
+    {
         Ok((acc, cat)) => {
             let _ = state.token_manager.switch_account(&acc.id).await;
             (

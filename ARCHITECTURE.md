@@ -99,8 +99,27 @@ Khi tính năng script bọc được kích hoạt:
    ```bash
    #!/usr/bin/env bash
    # Tự động chọn tài khoản có hạn ngạch cao nhất cho Antigravity
+   model=""
+   iter_next=0
+   for arg in "$@"; do
+       if [ "$iter_next" -eq 1 ]; then
+           model="$arg"
+           iter_next=0
+       elif [ "$arg" = "--model" ] || [ "$arg" = "-m" ]; then
+           iter_next=1
+       elif [[ "$arg" == --model=* ]]; then
+           model="${arg#--model=}"
+       elif [[ "$arg" == -m=* ]]; then
+           model="${arg#-m=}"
+       fi
+   done
+
    if command -v aam >/dev/null 2>&1; then
-       aam agy auto-select >/dev/null 2>&1
+       if [ -n "$model" ]; then
+           aam agy auto-select --model "$model" >/dev/null 2>&1
+       else
+           aam agy auto-select >/dev/null 2>&1
+       fi
    fi
 
    # Bảo đảm giữ nguyên cờ --dangerously-skip-permissions nếu chưa có
@@ -119,11 +138,19 @@ Khi tính năng script bọc được kích hoạt:
    fi
    ```
 3. Khi người dùng thực thi `agy <lệnh>`:
-   - Script gọi ngầm `aam agy auto-select` để đồng bộ thông tin xác thực của tài khoản tốt nhất vào keyring hệ thống và cơ sở dữ liệu IDE.
+   - Script tự động bóc tách cờ `--model` hoặc `-m` (nếu có) từ danh sách đối số và gọi `aam agy auto-select --model <mô-hình>` (hoặc gọi tự động theo phiên làm việc gần nhất nếu dùng `-c` / `--continue`).
+   - Script gọi ngầm `aam agy auto-select` để kích hoạt tài khoản tối ưu và đồng bộ thông tin xác thực vào keyring hệ thống (`KeyringSync`) và cơ sở dữ liệu IDE (`IdeDbSync`).
    - Script kiểm tra cờ tham số, tự động chèn `--dangerously-skip-permissions` nếu chưa có.
    - Thay thế tiến trình hiện tại bằng `agy-bin` qua lệnh `exec`, giữ nguyên mã thoát (exit code) và các luồng nhập xuất chuẩn (stdin/stdout/stderr).
 
-### 3.3. Tích hợp vòng đời (lifecycle)
+### 3.3. Thuật toán so sánh và chọn tài khoản tối ưu nhiều tầng
+Khi chọn tài khoản tối ưu (`select_best_account_for_category` và `compare_quota_priority`), hệ thống áp dụng bộ tiêu chí xếp hạng phân tầng:
+1. **Tầng 1 (Hạn ngạch 5 giờ)**: Tài khoản có phần trăm hạn ngạch 5 giờ cao hơn sẽ được ưu tiên hàng đầu.
+2. **Tầng 2 (Hạn ngạch tuần - Tie-breaker 1)**: Khi các tài khoản hòa điểm hạn ngạch 5 giờ (ví dụ đều 100%), hệ thống so sánh hạn ngạch tuần còn lại. Tài khoản có tỷ lệ hạn ngạch tuần cao hơn (ví dụ 92% so với 67%) sẽ được ưu tiên chọn.
+3. **Tầng 3 (Thời gian hồi phục 5 giờ - Tie-breaker 2)**: Khi hạn ngạch 5 giờ và hạn ngạch tuần bằng nhau, tài khoản có thời điểm reset 5 giờ đến sớm hơn (ví dụ còn ~30m so với ~4h 50m) sẽ được ưu tiên dùng trước để tận dụng tối đa chu kỳ làm mới hạn ngạch sắp tới.
+4. **Tầng 4 (Giữ nguyên tài khoản active - Tie-breaker 3)**: Chỉ khi toàn bộ các tiêu chí trên hoàn toàn trùng khớp, hệ thống mới giữ nguyên tài khoản đang hoạt động để tránh chuyển đổi phiên không cần thiết.
+
+### 3.4. Tích hợp vòng đời (lifecycle)
 - **Cài đặt**: Được kích hoạt tự động trong `scripts/install.sh` (`setup_agy_wrapper`) và qua lệnh CLI `aam install` / `aam reinstall` (`setup_agy_wrapper_if_present` trong `agent-relay/src/cli.rs`).
 - **Gỡ cài đặt**: Trong `scripts/uninstall.sh` và `aam uninstall`, hàm hoàn nguyên sẽ xóa script bọc và đổi tên `agy-bin` trở lại thành `agy`, đảm bảo trả lại nguyên trạng hệ thống.
 

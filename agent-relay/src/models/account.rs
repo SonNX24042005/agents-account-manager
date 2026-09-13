@@ -248,6 +248,72 @@ impl Account {
             .unwrap_or(self.quota_percentage)
     }
 
+    pub fn get_weekly_quota_for_category(&self, category: TargetModelCategory) -> f64 {
+        if let Some(group) = self.find_quota_group_for_category(category) {
+            if let Some(wb) = group.get_weekly_bucket() {
+                return wb.effective_percentage();
+            }
+        }
+        100.0
+    }
+
+    pub fn get_5h_reset_duration_seconds(&self, category: TargetModelCategory) -> Option<i64> {
+        let group = self.find_quota_group_for_category(category)?;
+        let b5h = group.get_5h_bucket()?;
+        let reset_str = b5h.reset_time.as_ref()?;
+        let reset_dt = chrono::DateTime::parse_from_rfc3339(reset_str)
+            .map(|dt| dt.with_timezone(&Utc))
+            .or_else(|_| reset_str.parse::<DateTime<Utc>>())
+            .ok()?;
+        let diff = reset_dt.signed_duration_since(Utc::now());
+        Some(diff.num_seconds().max(0))
+    }
+
+    pub fn compare_quota_priority(
+        &self,
+        other: &Account,
+        category: TargetModelCategory,
+    ) -> std::cmp::Ordering {
+        // 1. Primary: 5-hour effective quota percentage
+        let score_self = self.get_effective_quota_for_category(category);
+        let score_other = other.get_effective_quota_for_category(category);
+        let cmp_5h = score_self
+            .partial_cmp(&score_other)
+            .unwrap_or(std::cmp::Ordering::Equal);
+        if cmp_5h != std::cmp::Ordering::Equal {
+            return cmp_5h;
+        }
+
+        // 2. Secondary tie-breaker: Weekly quota percentage (higher remaining is preferred)
+        let weekly_self = self.get_weekly_quota_for_category(category);
+        let weekly_other = other.get_weekly_quota_for_category(category);
+        let cmp_weekly = weekly_self
+            .partial_cmp(&weekly_other)
+            .unwrap_or(std::cmp::Ordering::Equal);
+        if cmp_weekly != std::cmp::Ordering::Equal {
+            return cmp_weekly;
+        }
+
+        // 3. Tertiary tie-breaker: 5-hour reset duration (sooner reset is preferred to maximize cycle usage)
+        let reset_self = self.get_5h_reset_duration_seconds(category);
+        let reset_other = other.get_5h_reset_duration_seconds(category);
+        match (reset_self, reset_other) {
+            (Some(s_self), Some(s_other)) => {
+                // Smaller duration means resets sooner; in max_by ordering, smaller duration is Greater
+                let cmp_reset = s_other.cmp(&s_self);
+                if cmp_reset != std::cmp::Ordering::Equal {
+                    return cmp_reset;
+                }
+            }
+            (Some(_), None) => return std::cmp::Ordering::Greater,
+            (None, Some(_)) => return std::cmp::Ordering::Less,
+            (None, None) => {}
+        }
+
+        // 4. Quaternary tie-breaker: Keep active account if everything else is truly equal
+        self.is_active.cmp(&other.is_active)
+    }
+
     #[allow(dead_code)]
     pub fn get_quota_for_group(&self, group_keyword: &str) -> f64 {
         let kw = group_keyword.to_lowercase();
@@ -381,5 +447,67 @@ mod tests {
             80.0
         );
         assert_eq!(account.get_claude_gpt_quota(), 80.0);
+    }
+
+    #[test]
+    fn test_compare_quota_priority() {
+        let mut acc1 = Account::new("acc1@test.com".into(), "tok".into(), "ref".into(), 3600);
+        let mut acc2 = Account::new("acc2@test.com".into(), "tok".into(), "ref".into(), 3600);
+
+        // Case 1: acc1 has higher 5h quota (100% vs 90%)
+        acc1.quota_groups = vec![QuotaGroupInfo {
+            name: "Gemini 2.5 Flash / Pro".to_string(),
+            buckets: vec![
+                QuotaBucketInfo {
+                    window: "FIVE_HOUR".to_string(),
+                    remaining_percentage: 100.0,
+                    reset_time: None,
+                },
+                QuotaBucketInfo {
+                    window: "WEEKLY".to_string(),
+                    remaining_percentage: 50.0,
+                    reset_time: None,
+                },
+            ],
+        }];
+        acc2.quota_groups = vec![QuotaGroupInfo {
+            name: "Gemini 2.5 Flash / Pro".to_string(),
+            buckets: vec![
+                QuotaBucketInfo {
+                    window: "FIVE_HOUR".to_string(),
+                    remaining_percentage: 90.0,
+                    reset_time: None,
+                },
+                QuotaBucketInfo {
+                    window: "WEEKLY".to_string(),
+                    remaining_percentage: 100.0,
+                    reset_time: None,
+                },
+            ],
+        }];
+        assert_eq!(
+            acc1.compare_quota_priority(&acc2, TargetModelCategory::Gemini),
+            std::cmp::Ordering::Greater
+        );
+
+        // Case 2: Both 100% 5h, but acc2 has higher weekly quota (90% vs 50%)
+        acc2.quota_groups[0].buckets[0].remaining_percentage = 100.0;
+        acc2.quota_groups[0].buckets[1].remaining_percentage = 90.0;
+        acc1.quota_groups[0].buckets[1].remaining_percentage = 50.0;
+        assert_eq!(
+            acc1.compare_quota_priority(&acc2, TargetModelCategory::Gemini),
+            std::cmp::Ordering::Less
+        );
+
+        // Case 3: Both 100% 5h, both 90% weekly, but acc1 resets sooner (30m vs 3h)
+        acc1.quota_groups[0].buckets[1].remaining_percentage = 90.0;
+        let reset_sooner = (Utc::now() + chrono::Duration::minutes(30)).to_rfc3339();
+        let reset_later = (Utc::now() + chrono::Duration::hours(3)).to_rfc3339();
+        acc1.quota_groups[0].buckets[0].reset_time = Some(reset_sooner);
+        acc2.quota_groups[0].buckets[0].reset_time = Some(reset_later);
+        assert_eq!(
+            acc1.compare_quota_priority(&acc2, TargetModelCategory::Gemini),
+            std::cmp::Ordering::Greater
+        );
     }
 }

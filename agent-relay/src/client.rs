@@ -430,13 +430,43 @@ impl ApiClient {
     }
 
     pub async fn auto_select(&self, agent: Agent) -> Result<String> {
+        self.auto_select_with_model(agent, None).await
+    }
+
+    pub async fn auto_select_with_model(
+        &self,
+        agent: Agent,
+        model: Option<&str>,
+    ) -> Result<String> {
+        self.auto_select_advanced(agent, model, None).await
+    }
+
+    pub async fn auto_select_advanced(
+        &self,
+        agent: Agent,
+        model: Option<&str>,
+        conversation: Option<&str>,
+    ) -> Result<String> {
         self.ensure_service_ready().await?;
         match agent {
             Agent::Antigravity => {
-                let res = self
+                let mut req = self
                     .client
                     .post(format!("{}/api/accounts/auto-select", self.base_url()))
-                    .bearer_auth(&self.master_key)
+                    .bearer_auth(&self.master_key);
+
+                let mut payload = json!({});
+                if let Some(m) = model {
+                    payload["model"] = json!(m);
+                }
+                if let Some(c) = conversation {
+                    payload["conversation"] = json!(c);
+                }
+                if model.is_some() || conversation.is_some() {
+                    req = req.json(&payload);
+                }
+
+                let res = req
                     .send()
                     .await
                     .context("Không thể kết nối đến máy chủ")?;

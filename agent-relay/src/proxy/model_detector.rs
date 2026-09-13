@@ -20,6 +20,23 @@ impl TargetModelCategory {
             Self::ClaudeAndGpt => "Claude & GPT Models (Other)",
         }
     }
+
+    pub fn from_model_name(name: &str) -> Self {
+        let lower = name.to_lowercase();
+        if lower.contains("claude")
+            || lower.contains("sonnet")
+            || lower.contains("haiku")
+            || lower.contains("opus")
+            || lower.contains("gpt")
+            || lower.contains("o1")
+            || lower.contains("o3")
+            || lower.contains("o4")
+        {
+            Self::ClaudeAndGpt
+        } else {
+            Self::Gemini
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -143,6 +160,14 @@ impl ModelDetector {
         );
     }
 
+    pub fn record_cli_model_hint(&self, model: &str) {
+        let cat = TargetModelCategory::from_model_name(model);
+        self.update_detected_category(
+            cat,
+            format!("Chỉ định trực tiếp từ tham số CLI (--model {})", model),
+        );
+    }
+
     fn update_detected_category(&self, cat: TargetModelCategory, source: String) {
         let mut state = self.cached_state.lock().unwrap();
         state.detected_category = cat;
@@ -153,6 +178,76 @@ impl ModelDetector {
         if let Ok(json_str) = serde_json::to_string_pretty(&to_save) {
             let _ = secure_file::atomic_write(&self.state_file, json_str.as_bytes(), 0o600);
         }
+    }
+
+    pub fn record_conversation_hint(&self, conversation_id: &str) -> Option<TargetModelCategory> {
+        let home = dirs::home_dir()?;
+        let log_file = home
+            .join(".gemini")
+            .join("antigravity-cli")
+            .join("brain")
+            .join(conversation_id)
+            .join(".system_generated")
+            .join("logs")
+            .join("transcript.jsonl");
+
+        if log_file.exists() {
+            if let Some(cat) = Self::scan_transcript_file(&log_file) {
+                self.update_detected_category(
+                    cat,
+                    format!(
+                        "Phát hiện từ phiên hội thoại {} ({})",
+                        conversation_id,
+                        cat.display_name()
+                    ),
+                );
+                return Some(cat);
+            }
+        }
+        None
+    }
+
+    /// Scan a specific transcript.jsonl file
+    fn scan_transcript_file(target_log: &std::path::Path) -> Option<TargetModelCategory> {
+        use std::io::{Read, Seek, SeekFrom};
+        let mut file = fs::File::open(target_log).ok()?;
+        let meta = file.metadata().ok()?;
+        let file_len = meta.len();
+        let read_size = file_len.min(32 * 1024); // read up to last 32KB
+        let offset = file_len - read_size;
+        file.seek(SeekFrom::Start(offset)).ok()?;
+        let mut buffer = vec![0u8; read_size as usize];
+        file.read_exact(&mut buffer).ok()?;
+        let content = String::from_utf8_lossy(&buffer);
+
+        // Check the last 100 lines
+        let lines: Vec<&str> = content.lines().collect();
+        let scan_lines = if lines.len() > 100 {
+            &lines[lines.len() - 100..]
+        } else {
+            &lines[..]
+        };
+
+        for line in scan_lines.iter().rev() {
+            let lower = line.to_lowercase();
+            if lower.contains("claude")
+                || lower.contains("sonnet")
+                || lower.contains("haiku")
+                || lower.contains("opus")
+                || lower.contains("gpt-4")
+                || lower.contains("gpt-o")
+                || lower.contains("o1")
+                || lower.contains("o3")
+                || lower.contains("o4")
+            {
+                return Some(TargetModelCategory::ClaudeAndGpt);
+            }
+            if lower.contains("gemini") || lower.contains("flash") || lower.contains("pro") {
+                return Some(TargetModelCategory::Gemini);
+            }
+        }
+
+        None
     }
 
     /// Scan recent transcript.jsonl files in ~/.gemini/antigravity-cli/brain/
@@ -188,47 +283,13 @@ impl ModelDetector {
         }
 
         let target_log = latest_file?;
-        use std::io::{Read, Seek, SeekFrom};
-        let mut file = fs::File::open(target_log).ok()?;
-        let meta = file.metadata().ok()?;
-        let file_len = meta.len();
-        let read_size = file_len.min(32 * 1024); // read up to last 32KB
-        let offset = file_len - read_size;
-        file.seek(SeekFrom::Start(offset)).ok()?;
-        let mut buffer = vec![0u8; read_size as usize];
-        file.read_exact(&mut buffer).ok()?;
-        let content = String::from_utf8_lossy(&buffer);
-
-        // Check the last 100 lines
-        let lines: Vec<&str> = content.lines().collect();
-        let scan_lines = if lines.len() > 100 {
-            &lines[lines.len() - 100..]
-        } else {
-            &lines[..]
-        };
-
-        for line in scan_lines.iter().rev() {
-            let lower = line.to_lowercase();
-            if lower.contains("claude")
-                || lower.contains("sonnet")
-                || lower.contains("haiku")
-                || lower.contains("opus")
-                || lower.contains("gpt-4")
-                || lower.contains("gpt-o")
-            {
-                return Some((
-                    TargetModelCategory::ClaudeAndGpt,
-                    "Phát hiện qua phiên hội thoại gần nhất (Claude / GPT)".to_string(),
-                ));
-            }
-            if lower.contains("gemini") || lower.contains("flash") || lower.contains("pro") {
-                return Some((
-                    TargetModelCategory::Gemini,
-                    "Phát hiện qua phiên hội thoại gần nhất (Gemini)".to_string(),
-                ));
-            }
-        }
-
-        None
+        let cat = Self::scan_transcript_file(&target_log)?;
+        Some((
+            cat,
+            format!(
+                "Phát hiện qua phiên hội thoại gần nhất ({})",
+                cat.display_name()
+            ),
+        ))
     }
 }
