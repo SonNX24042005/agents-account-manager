@@ -53,6 +53,11 @@ impl TokenManager {
         Ok(())
     }
 
+    pub async fn get_active_account(&self) -> Option<Account> {
+        let list = self.accounts.read().await;
+        list.iter().find(|a| a.is_active).cloned()
+    }
+
     pub fn get_model_detector(&self) -> Arc<ModelDetector> {
         self.model_detector.clone()
     }

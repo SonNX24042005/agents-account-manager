@@ -696,6 +696,28 @@ async fn handle_auto_select_highest_gemini(
         None
     };
 
+    let is_enabled = state
+        .token_manager
+        .settings
+        .flags
+        .lock()
+        .await
+        .enabled(crate::proxy::selection::Agent::Antigravity);
+    if !is_enabled {
+        let current = state.token_manager.get_active_account().await;
+        let email = current.as_ref().map(|a| a.email.clone()).unwrap_or_default();
+        return (
+            StatusCode::OK,
+            Json(json!({
+                "status": "disabled",
+                "message": "Chế độ tự động chọn tài khoản cho Antigravity đang tắt; giữ nguyên tài khoản hiện tại.",
+                "account": email,
+                "data": current.as_ref().map(PublicAccount::from),
+            })),
+        )
+            .into_response();
+    }
+
     let target_category = if let Some(ref model) = payload.as_ref().and_then(|p| p.model.as_ref()) {
         state.token_manager.model_detector.record_cli_model_hint(model);
         crate::proxy::model_detector::TargetModelCategory::from_model_name(model)
