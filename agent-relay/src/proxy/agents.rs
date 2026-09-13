@@ -1002,10 +1002,12 @@ async fn fetch_codex_quota(
         &serde_json::to_vec(credentials)?,
         0o600,
     )?;
-    let mut command = tokio::process::Command::new("codex");
+    let codex_bin = super::codex_login::find_codex_program();
+    let mut command = tokio::process::Command::new(codex_bin);
     command
         .args(["app-server", "-c", "cli_auth_credentials_store=\"file\""])
         .env("CODEX_HOME", &dir.0)
+        .env("PATH", super::codex_login::enriched_path())
         .env("TOKIO_WORKER_THREADS", "2")
         .env_remove("OPENAI_API_KEY")
         .env_remove("CODEX_API_KEY")

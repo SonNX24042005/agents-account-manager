@@ -147,7 +147,42 @@ impl CodexLogin {
     }
 }
 
-fn find_codex_program() -> PathBuf {
+pub fn enriched_path() -> String {
+    let mut paths = Vec::new();
+    if let Some(home) = dirs::home_dir() {
+        paths.push(home.join(".local/bin"));
+        paths.push(home.join(".cargo/bin"));
+        paths.push(home.join(".npm-global/bin"));
+        paths.push(home.join("bin"));
+    }
+    #[cfg(unix)]
+    {
+        paths.push(PathBuf::from("/usr/local/bin"));
+        paths.push(PathBuf::from("/usr/bin"));
+        paths.push(PathBuf::from("/bin"));
+    }
+    if let Ok(current) = std::env::var("PATH") {
+        for p in std::env::split_paths(&current) {
+            if !paths.contains(&p) {
+                paths.push(p);
+            }
+        }
+    }
+    std::env::join_paths(paths)
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|_| {
+            #[cfg(unix)]
+            {
+                "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".to_string()
+            }
+            #[cfg(not(unix))]
+            {
+                String::new()
+            }
+        })
+}
+
+pub fn find_codex_program() -> PathBuf {
     if let Some(path) = std::env::var_os("CODEX_PATH") {
         let pb = PathBuf::from(path);
         if pb.is_file() {
@@ -155,9 +190,22 @@ fn find_codex_program() -> PathBuf {
         }
     }
     if let Some(home) = dirs::home_dir() {
-        let local_codex = home.join(".local/bin/codex");
-        if local_codex.is_file() {
-            return local_codex;
+        let candidates = [
+            home.join(".local/bin/codex"),
+            home.join(".cargo/bin/codex"),
+            home.join(".npm-global/bin/codex"),
+            home.join("bin/codex"),
+            PathBuf::from("/usr/local/bin/codex"),
+            PathBuf::from("/usr/bin/codex"),
+            #[cfg(windows)]
+            home.join(".local/bin/codex.exe"),
+            #[cfg(windows)]
+            home.join(".cargo/bin/codex.exe"),
+        ];
+        for candidate in candidates {
+            if candidate.is_file() {
+                return candidate;
+            }
         }
     }
     PathBuf::from("codex")
@@ -257,6 +305,7 @@ async fn start_session(data_dir: &Path, program: &Path) -> Result<Session> {
     let mut child = tokio::process::Command::new(program)
         .args(["app-server", "-c", "cli_auth_credentials_store=\"file\""])
         .env("CODEX_HOME", &dir.0)
+        .env("PATH", enriched_path())
         .env("TOKIO_WORKER_THREADS", "2")
         .env_remove("OPENAI_API_KEY")
         .env_remove("CODEX_API_KEY")
@@ -363,5 +412,21 @@ mod tests {
             }
         });
         assert!(completed(&fail_msg, "test-id").is_err());
+    }
+
+    #[test]
+    fn test_enriched_path_contains_local_bin() {
+        let path = enriched_path();
+        assert!(!path.is_empty());
+        if let Some(home) = dirs::home_dir() {
+            let local_bin = home.join(".local/bin").to_string_lossy().to_string();
+            assert!(path.contains(&local_bin));
+        }
+    }
+
+    #[test]
+    fn test_find_codex_program_fallback() {
+        let bin = find_codex_program();
+        assert!(!bin.as_os_str().is_empty());
     }
 }

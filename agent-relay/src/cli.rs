@@ -585,6 +585,7 @@ impl Cli {
 
             let bin_arg = Self::quote_systemd_exec_path(&bin_path)?;
 
+            let env_path = crate::proxy::codex_login::enriched_path();
             let service_content = format!(
                 "[Unit]\n\
                 Description=Agent Relay Daemon (Account Manager for AI Coding Agents)\n\
@@ -594,10 +595,12 @@ impl Cli {
                 ExecStart={} run\n\
                 Restart=always\n\
                 RestartSec=3\n\
-                Environment=RUST_LOG=info\n\n\
+                Environment=RUST_LOG=info\n\
+                Environment=\"PATH={}\"\n\n\
                 [Install]\n\
                 WantedBy=default.target\n",
-                bin_arg
+                bin_arg,
+                env_path
             );
 
             crate::storage::secure_file::atomic_write(
