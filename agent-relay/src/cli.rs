@@ -748,9 +748,38 @@ impl Cli {
     }
 
     #[cfg(unix)]
+    pub fn setup_agy_wrapper_auto() {
+        if let Some(home) = dirs::home_dir() {
+            Self::setup_agy_wrapper_if_present(&home.join(".local").join("bin"));
+        }
+    }
+
+    #[cfg(not(unix))]
+    pub fn setup_agy_wrapper_auto() {}
+
+    #[cfg(unix)]
     fn setup_agy_wrapper_if_present(parent: &Path) {
-        let agy_path = parent.join("agy");
-        let agy_bin = parent.join("agy-bin");
+        let mut agy_path = parent.join("agy");
+        let mut agy_bin = parent.join("agy-bin");
+
+        // Nếu không tìm thấy agy trong parent, tìm kiếm qua PATH
+        if !agy_path.exists() && !agy_bin.exists() {
+            if let Ok(output) = std::process::Command::new("which").arg("agy").output() {
+                if output.status.success() {
+                    let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !path_str.is_empty() {
+                        let p = std::path::PathBuf::from(&path_str);
+                        if let Some(p_parent) = p.parent() {
+                            let parent_buf = p_parent.to_path_buf();
+                            if parent_buf.metadata().is_ok_and(|m| !m.permissions().readonly()) {
+                                agy_bin = parent_buf.join("agy-bin");
+                                agy_path = p;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         if agy_path.exists() && !agy_bin.exists() {
             if let Ok(content) = fs::read_to_string(&agy_path) {

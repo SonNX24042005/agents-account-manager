@@ -37,6 +37,9 @@ async fn main() -> anyhow::Result<()> {
     config.ensure_directories()?;
     tracing::info!("[Config] Data directory: {:?}", config.data_dir);
 
+    // Ensure agy wrapper is configured if agy CLI is present on this machine
+    cli::Cli::setup_agy_wrapper_auto();
+
     // 3. Initialize Account Storage & Token Pool
     let store = AccountStore::new(config.accounts_dir());
     let token_manager = TokenManager::new(store, config.data_dir.clone())?;

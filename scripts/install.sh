@@ -283,28 +283,26 @@ do_install() {
         fi
     fi
 
+    # Khởi động dịch vụ nền và kích hoạt tự khởi động cùng máy
+    echo "[start] Đang thiết lập và kích hoạt dịch vụ chạy ngầm (systemd user service)..."
+    "$INSTALL_DIR/aam" autostart >/dev/null 2>&1 || "$INSTALL_DIR/aam" start >/dev/null 2>&1 || true
+
     echo ""
     echo "Cài đặt thành công lệnh 'aam'!"
     echo ""
     echo "Các lệnh sử dụng:"
-    echo "  aam                    Tự động mở bảng điều khiển web và chạy dịch vụ"
+    echo "  aam                    Xem danh sách tài khoản toàn bộ agent"
+    echo "  aam check              Kiểm tra trạng thái tổng quan hệ thống và dịch vụ"
+    echo "  aam tui                Mở giao diện quản lý trực quan dạng bảng trên terminal"
+    echo "  aam web                Mở bảng điều khiển trên trình duyệt web"
+    echo "  aam start / stop       Khởi chạy hoặc dừng dịch vụ ngầm"
+    echo "  aam autostart          Kích hoạt tự khởi động cùng máy (systemd user service)"
     echo "  aam update             Cập nhật lệnh aam lên phiên bản mới nhất từ GitHub"
-    echo "  aam start              Khởi chạy dịch vụ chạy ngầm"
-    echo "  aam autostart          Tự động chạy cùng hệ thống (kể cả khi restart máy)"
-    echo "  aam stop               Dừng dịch vụ"
-    echo "  aam restart            Khởi động lại dịch vụ"
-    echo "  aam status             Kiểm tra trạng thái hoạt động"
-    echo "  aam version            Xem phiên bản hiện tại"
-    echo "  aam disable            Tắt tự khởi động cùng máy"
-    echo "  aam reinstall          Cài đặt lại binary và liên kết lệnh"
-    echo "  aam uninstall          Gỡ cài đặt aam (thêm --purge để xóa cả dữ liệu)"
+    echo "  aam uninstall          Gỡ cài đặt aam khỏi hệ thống (thêm --purge để xóa cả dữ liệu)"
     echo ""
     echo "Bảng điều khiển: http://127.0.0.1:8045"
     echo ""
-    echo "[start] Đang khởi động và mở bảng điều khiển..."
-    if ! "$INSTALL_DIR/aam"; then
-        echo "[cảnh báo] Không thể tự động mở trình duyệt. Hãy chạy lệnh 'aam' để thử lại."
-    fi
+    "$INSTALL_DIR/aam" check || true
 }
 
 do_update() {
