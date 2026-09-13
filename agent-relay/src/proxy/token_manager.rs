@@ -37,25 +37,12 @@ impl TokenManager {
         })
     }
 
-    pub fn set_switch_writer(&mut self, writer: fn(&Account) -> Result<()>) {
-        self.switch_writer = writer;
-    }
-
-    pub fn set_auth_path(&mut self, path: Option<std::path::PathBuf>) {
-        self.auth_path = path;
-    }
-
     pub async fn auto_select_if_enabled(&self) -> Result<()> {
         let flags = self.settings.flags.lock().await;
         if flags.enabled(Agent::Antigravity) {
             self.select_best_account_for_active_model().await?;
         }
         Ok(())
-    }
-
-    pub async fn get_active_account(&self) -> Option<Account> {
-        let list = self.accounts.read().await;
-        list.iter().find(|a| a.is_active).cloned()
     }
 
     pub fn get_model_detector(&self) -> Arc<ModelDetector> {
@@ -231,7 +218,7 @@ impl TokenManager {
         if !flags.enabled(Agent::Antigravity) {
             return list
                 .iter()
-                .filter(|a| !a.is_rate_limited())
+                .filter(eligible)
                 .find(|a| a.is_active)
                 .cloned()
                 .ok_or_else(|| {
@@ -245,23 +232,7 @@ impl TokenManager {
             .ok_or_else(|| anyhow!("Không có tài khoản còn quota"))
     }
 
-    pub async fn select_best_account_for_rotation(&self) -> Result<Account> {
-        self.sync_active_account_from_disk().await;
-        let list = self.accounts.read().await;
-        let category = self.model_detector.get_effective_category();
-        let eligible = |a: &&Account| {
-            a.has_fresh_quota()
-                && !a.is_rate_limited()
-                && a.has_available_weekly_quota_for_category(category)
-                && a.get_effective_quota_for_category(category) > 0.0
-        };
-        list.iter()
-            .filter(eligible)
-            .max_by(|a, b| a.compare_quota_priority(b, category))
-            .cloned()
-            .ok_or_else(|| anyhow!("Không còn tài khoản khả dụng trong pool"))
-    }
-
+    #[allow(dead_code)]
     pub async fn mark_rate_limited(&self, email: &str, cooldown_seconds: i64) {
         let mut list = self.accounts.write().await;
         if let Some(account) = list.iter_mut().find(|a| a.email == email) {
@@ -280,10 +251,6 @@ impl TokenManager {
         let mut list = self.accounts.write().await;
         for acc in list.iter_mut() {
             acc.rate_limit_until = None;
-            if acc.quota_percentage == 0.0 {
-                acc.quota_percentage = 100.0;
-                acc.quota_checked_at = Some(chrono::Utc::now());
-            }
             let _ = self.store.save(acc);
         }
     }

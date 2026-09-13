@@ -9,22 +9,6 @@ impl KeyringSync {
         refresh_token: &str,
         expires_at_rfc3339: &str,
     ) -> Result<()> {
-        Self::inject_keyring_credential_with_target(
-            "gemini",
-            "antigravity",
-            access_token,
-            refresh_token,
-            expires_at_rfc3339,
-        )
-    }
-
-    pub fn inject_keyring_credential_with_target(
-        service: &str,
-        user: &str,
-        access_token: &str,
-        refresh_token: &str,
-        expires_at_rfc3339: &str,
-    ) -> Result<()> {
         #[cfg(target_os = "linux")]
         {
             if std::env::var("DBUS_SESSION_BUS_ADDRESS").is_err() {
@@ -40,7 +24,7 @@ impl KeyringSync {
             }
         }
 
-        let entry = Entry::new(service, user)?;
+        let entry = Entry::new("gemini", "antigravity")?;
         let payload = serde_json::json!({
             "token": {
                 "access_token": access_token,
@@ -55,13 +39,13 @@ impl KeyringSync {
         match entry.set_password(&payload) {
             Ok(_) => {
                 tracing::info!(
-                    "[Keyring Sync] Successfully updated OS Keyring (service: {service}, user: {user})"
+                    "[Keyring Sync] Successfully updated OS Keyring (service: gemini, user: antigravity)"
                 );
                 Ok(())
             }
             Err(e) => {
                 tracing::warn!(
-                    "[Keyring Sync] Failed to update OS Keyring (service: {service}, user: {user}): {e}"
+                    "[Keyring Sync] Failed to update OS Keyring (service: gemini, user: antigravity): {e}"
                 );
                 Err(anyhow::anyhow!("Keyring set_password failed: {e}"))
             }
@@ -74,17 +58,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_inject_keyring_isolated() {
-        let res = KeyringSync::inject_keyring_credential_with_target(
-            "aam_test_service",
-            "aam_test_user",
+    fn test_inject_keyring() {
+        let res = KeyringSync::inject_keyring_credential(
             "test_access",
             "test_refresh",
             "2026-09-13T00:00:00Z",
         );
         assert!(res.is_ok());
-        if let Ok(entry) = Entry::new("aam_test_service", "aam_test_user") {
-            let _ = entry.delete_password();
-        }
     }
 }

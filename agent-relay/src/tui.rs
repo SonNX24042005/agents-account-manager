@@ -12,9 +12,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{
-        Block, BorderType, Borders, Clear, Gauge, Paragraph, Row, Table, TableState, Tabs, Wrap,
-    },
+    widgets::{Block, BorderType, Borders, Clear, Gauge, Paragraph, Row, Table, TableState, Tabs, Wrap},
     Frame, Terminal,
 };
 use std::io::stdout;
@@ -71,8 +69,7 @@ impl TuiApp {
             preference: None,
             settings: None,
             status_msg: Some((
-                "Sử dụng mũi tên để chọn, Enter để chuyển, phím + hoặc n để thêm tài khoản mới"
-                    .to_string(),
+                "Sử dụng mũi tên để chọn, Enter để chuyển, phím + hoặc n để thêm tài khoản mới".to_string(),
                 Instant::now(),
                 false,
             )),
@@ -86,11 +83,7 @@ impl TuiApp {
     }
 
     pub async fn fetch_data(&mut self) {
-        if let Ok(accounts) = self
-            .client
-            .list_accounts_for_agent(self.current_agent)
-            .await
-        {
+        if let Ok(accounts) = self.client.list_accounts_for_agent(self.current_agent).await {
             self.accounts = accounts;
             if self.accounts.is_empty() {
                 self.table_state.select(None);
@@ -159,22 +152,11 @@ impl TuiApp {
     }
 
     pub async fn switch_selected_account(&mut self) {
-        let Some(idx) = self.table_state.selected() else {
-            return;
-        };
-        let Some(acc) = self.accounts.get(idx).cloned() else {
-            return;
-        };
+        let Some(idx) = self.table_state.selected() else { return; };
+        let Some(acc) = self.accounts.get(idx).cloned() else { return; };
 
-        self.set_status(
-            format!("Đang chuyển sang tài khoản {}...", acc.email),
-            false,
-        );
-        match self
-            .client
-            .switch_account(self.current_agent, &acc.id)
-            .await
-        {
+        self.set_status(format!("Đang chuyển sang tài khoản {}...", acc.email), false);
+        match self.client.switch_account(self.current_agent, &acc.id).await {
             Ok(()) => {
                 self.set_status(format!("✓ Đã chuyển sang tài khoản {}", acc.email), false);
                 self.fetch_data().await;
@@ -201,10 +183,7 @@ impl TuiApp {
 
     pub async fn cycle_preference(&mut self) {
         if self.current_agent != Agent::Antigravity {
-            self.set_status(
-                "Cấu hình ưu tiên mô hình chỉ áp dụng cho Antigravity",
-                false,
-            );
+            self.set_status("Cấu hình ưu tiên mô hình chỉ áp dụng cho Antigravity", false);
             return;
         }
 
@@ -230,10 +209,7 @@ impl TuiApp {
                 }
                 .to_string();
                 self.preference = Some(pref);
-                self.set_status(
-                    format!("✓ Đã đổi ưu tiên định tuyến thành: {}", name),
-                    false,
-                );
+                self.set_status(format!("✓ Đã đổi ưu tiên định tuyến thành: {}", name), false);
                 self.fetch_data().await;
             }
             Err(e) => {
@@ -263,19 +239,11 @@ impl TuiApp {
             .unwrap_or(false);
 
         let new_state = !is_enabled;
-        match self
-            .client
-            .set_agent_setting(self.current_agent, new_state)
-            .await
-        {
+        match self.client.set_agent_setting(self.current_agent, new_state).await {
             Ok(()) => {
                 let state_str = if new_state { "Bật" } else { "Tắt" };
                 self.set_status(
-                    format!(
-                        "✓ Đã {} chế độ tự động chọn cho {}",
-                        state_str,
-                        self.current_agent.name()
-                    ),
+                    format!("✓ Đã {} chế độ tự động chọn cho {}", state_str, self.current_agent.name()),
                     false,
                 );
                 self.fetch_data().await;
@@ -288,11 +256,7 @@ impl TuiApp {
 
     pub async fn execute_delete(&mut self, acc: UnifiedAccountDto) {
         self.set_status(format!("Đang xóa tài khoản {}...", acc.email), false);
-        match self
-            .client
-            .delete_account(self.current_agent, &acc.id)
-            .await
-        {
+        match self.client.delete_account(self.current_agent, &acc.id).await {
             Ok(()) => {
                 self.set_status(format!("✓ Đã xóa tài khoản {}", acc.email), false);
                 self.fetch_data().await;
@@ -381,9 +345,7 @@ async fn handle_key_event(app: &mut TuiApp, key_code: KeyCode, modifiers: KeyMod
                         app.set_status("Đã đóng menu thêm tài khoản", false);
                     }
                     // Antigravity options
-                    KeyCode::Char('1') | KeyCode::Char('o')
-                        if app.current_agent == Agent::Antigravity =>
-                    {
+                    KeyCode::Char('1') | KeyCode::Char('o') if app.current_agent == Agent::Antigravity => {
                         app.set_status("Đang khởi tạo phiên xác thực Google OAuth...", false);
                         match app.client.start_oauth_flow().await {
                             Ok(url) => {
@@ -396,9 +358,7 @@ async fn handle_key_event(app: &mut TuiApp, key_code: KeyCode, modifiers: KeyMod
                             }
                         }
                     }
-                    KeyCode::Char('2') | KeyCode::Char('m')
-                        if app.current_agent == Agent::Antigravity =>
-                    {
+                    KeyCode::Char('2') | KeyCode::Char('m') if app.current_agent == Agent::Antigravity => {
                         app.active_modal = Some(ActiveModal::ManualInput {
                             active_field: 0,
                             email: String::new(),
@@ -407,9 +367,7 @@ async fn handle_key_event(app: &mut TuiApp, key_code: KeyCode, modifiers: KeyMod
                         });
                     }
                     // Codex options
-                    KeyCode::Char('1') | KeyCode::Char('o')
-                        if app.current_agent == Agent::Codex =>
-                    {
+                    KeyCode::Char('1') | KeyCode::Char('o') if app.current_agent == Agent::Codex => {
                         app.set_status("Đang khởi tạo phiên đăng nhập thiết bị Codex...", false);
                         match app.client.start_codex_login().await {
                             Ok(status) => {
@@ -424,38 +382,24 @@ async fn handle_key_event(app: &mut TuiApp, key_code: KeyCode, modifiers: KeyMod
                                 });
                             }
                             Err(e) => {
-                                app.set_status(
-                                    format!("✗ Khởi tạo đăng nhập Codex thất bại: {}", e),
-                                    true,
-                                );
+                                app.set_status(format!("✗ Khởi tạo đăng nhập Codex thất bại: {}", e), true);
                             }
                         }
                     }
-                    KeyCode::Char('2') | KeyCode::Char('c')
-                        if app.current_agent == Agent::Codex =>
-                    {
+                    KeyCode::Char('2') | KeyCode::Char('c') if app.current_agent == Agent::Codex => {
                         app.set_status("Đang nhập phiên Codex từ máy...", false);
-                        match app
-                            .client
-                            .import_native_account(Agent::Codex, "codex-cli", None)
-                            .await
-                        {
+                        match app.client.import_native_account(Agent::Codex, "codex-cli", None).await {
                             Ok(()) => {
                                 app.set_status("✓ Đã nhập phiên Codex từ máy thành công", false);
                                 app.active_modal = None;
                                 app.fetch_data().await;
                             }
                             Err(e) => {
-                                app.set_status(
-                                    format!("✗ Nhập tài khoản Codex thất bại: {}", e),
-                                    true,
-                                );
+                                app.set_status(format!("✗ Nhập tài khoản Codex thất bại: {}", e), true);
                             }
                         }
                     }
-                    KeyCode::Char('3') | KeyCode::Char('m')
-                        if app.current_agent == Agent::Codex =>
-                    {
+                    KeyCode::Char('3') | KeyCode::Char('m') if app.current_agent == Agent::Codex => {
                         app.active_modal = Some(ActiveModal::ManualInput {
                             active_field: 0,
                             email: String::new(),
@@ -464,34 +408,20 @@ async fn handle_key_event(app: &mut TuiApp, key_code: KeyCode, modifiers: KeyMod
                         });
                     }
                     // Claude options
-                    KeyCode::Char('1') | KeyCode::Char('c')
-                        if app.current_agent == Agent::Claude =>
-                    {
+                    KeyCode::Char('1') | KeyCode::Char('c') if app.current_agent == Agent::Claude => {
                         app.set_status("Đang nhập phiên Claude Code từ máy...", false);
-                        match app
-                            .client
-                            .import_native_account(Agent::Claude, "claude-cli", None)
-                            .await
-                        {
+                        match app.client.import_native_account(Agent::Claude, "claude-cli", None).await {
                             Ok(()) => {
-                                app.set_status(
-                                    "✓ Đã nhập phiên Claude Code từ máy thành công",
-                                    false,
-                                );
+                                app.set_status("✓ Đã nhập phiên Claude Code từ máy thành công", false);
                                 app.active_modal = None;
                                 app.fetch_data().await;
                             }
                             Err(e) => {
-                                app.set_status(
-                                    format!("✗ Nhập tài khoản Claude thất bại: {}", e),
-                                    true,
-                                );
+                                app.set_status(format!("✗ Nhập tài khoản Claude thất bại: {}", e), true);
                             }
                         }
                     }
-                    KeyCode::Char('2') | KeyCode::Char('m')
-                        if app.current_agent == Agent::Claude =>
-                    {
+                    KeyCode::Char('2') | KeyCode::Char('m') if app.current_agent == Agent::Claude => {
                         app.active_modal = Some(ActiveModal::ManualInput {
                             active_field: 0,
                             email: String::new(),
@@ -603,14 +533,7 @@ async fn handle_key_event(app: &mut TuiApp, key_code: KeyCode, modifiers: KeyMod
 
                         match res {
                             Ok(()) => {
-                                app.set_status(
-                                    format!(
-                                        "✓ Đã thêm tài khoản {} ({})",
-                                        email_trim,
-                                        agent.name()
-                                    ),
-                                    false,
-                                );
+                                app.set_status(format!("✓ Đã thêm tài khoản {} ({})", email_trim, agent.name()), false);
                                 app.active_modal = None;
                                 app.fetch_data().await;
                             }
@@ -715,28 +638,11 @@ fn render_tui(f: &mut Frame, app: &mut TuiApp) {
         match modal {
             ActiveModal::DeleteConfirm(acc) => render_delete_modal(f, acc),
             ActiveModal::AddMenu => render_add_menu_modal(f, app.current_agent),
-            ActiveModal::CodexLoginProgress {
-                auth_url,
-                status,
-                message,
-                ..
-            } => {
+            ActiveModal::CodexLoginProgress { auth_url, status, message, .. } => {
                 render_codex_login_modal(f, auth_url.as_deref(), status, message);
             }
-            ActiveModal::ManualInput {
-                active_field,
-                email,
-                token,
-                error_msg,
-            } => {
-                render_manual_input_modal(
-                    f,
-                    app.current_agent,
-                    *active_field,
-                    email,
-                    token,
-                    error_msg.as_deref(),
-                );
+            ActiveModal::ManualInput { active_field, email, token, error_msg } => {
+                render_manual_input_modal(f, app.current_agent, *active_field, email, token, error_msg.as_deref());
             }
         }
     }
@@ -794,7 +700,10 @@ fn render_header(f: &mut Frame, area: Rect, app: &TuiApp) {
             .as_ref()
             .map(|s| s.is_enabled(app.current_agent))
             .unwrap_or(false);
-        format!("Tự động chọn: {}", if is_auto { "Bật" } else { "Tắt" })
+        format!(
+            "Tự động chọn: {}",
+            if is_auto { "Bật" } else { "Tắt" }
+        )
     };
 
     let daemon_info = Paragraph::new(Line::from(vec![
@@ -923,11 +832,10 @@ fn render_account_detail(f: &mut Frame, area: Rect, app: &TuiApp) {
         .title(" Chi tiết tài khoản ");
 
     let Some(acc) = selected_acc else {
-        let empty_msg =
-            Paragraph::new("Chưa có tài khoản nào. Nhấn [+] hoặc [n] để thêm tài khoản mới.")
-                .style(Style::default().fg(Color::DarkGray))
-                .alignment(Alignment::Center)
-                .block(block);
+        let empty_msg = Paragraph::new("Chưa có tài khoản nào. Nhấn [+] hoặc [n] để thêm tài khoản mới.")
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(Alignment::Center)
+            .block(block);
         f.render_widget(empty_msg, area);
         return;
     };
@@ -945,12 +853,7 @@ fn render_account_detail(f: &mut Frame, area: Rect, app: &TuiApp) {
         .split(inner_area);
 
     let active_badge = if acc.is_active {
-        Span::styled(
-            " [Đang hoạt động]",
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        )
+        Span::styled(" [Đang hoạt động]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
     } else {
         Span::styled(" [Chưa kích hoạt]", Style::default().fg(Color::DarkGray))
     };
@@ -1083,12 +986,7 @@ fn render_footer(f: &mut Frame, area: Rect) {
         Span::raw(" Chọn | "),
         Span::styled("[Enter/s]", Style::default().fg(Color::Cyan)),
         Span::raw(" Chuyển | "),
-        Span::styled(
-            "[+/n]",
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        ),
+        Span::styled("[+/n]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
         Span::raw(" Thêm | "),
         Span::styled("[d]", Style::default().fg(Color::Cyan)),
         Span::raw(" Xóa | "),
@@ -1134,20 +1032,12 @@ fn render_delete_modal(f: &mut Frame, acc: &UnifiedAccountDto) {
         Line::from(""),
         Line::from(vec![
             Span::raw("Bạn có chắc chắn muốn xóa tài khoản "),
-            Span::styled(
-                &acc.email,
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
+            Span::styled(&acc.email, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
             Span::raw("?"),
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled(
-                " [y / Enter] ",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            ),
+            Span::styled(" [y / Enter] ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
             Span::raw("Xác nhận xóa   "),
             Span::styled(" [n / Esc] ", Style::default().fg(Color::DarkGray)),
             Span::raw("Hủy bỏ"),
@@ -1185,21 +1075,11 @@ fn render_add_menu_modal(f: &mut Frame, agent: Agent) {
         Agent::Antigravity => vec![
             Line::from(""),
             Line::from(vec![
-                Span::styled(
-                    " [1 / o] ",
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled(" [1 / o] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
                 Span::raw("Đăng nhập bằng Google OAuth (mở trình duyệt)"),
             ]),
             Line::from(vec![
-                Span::styled(
-                    " [2 / m] ",
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled(" [2 / m] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
                 Span::raw("Nhập thủ công bằng Access Token"),
             ]),
             Line::from(""),
@@ -1211,30 +1091,15 @@ fn render_add_menu_modal(f: &mut Frame, agent: Agent) {
         Agent::Codex => vec![
             Line::from(""),
             Line::from(vec![
-                Span::styled(
-                    " [1 / o] ",
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled(" [1 / o] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
                 Span::raw("Đăng nhập bằng trình duyệt (Device OAuth)"),
             ]),
             Line::from(vec![
-                Span::styled(
-                    " [2 / c] ",
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled(" [2 / c] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
                 Span::raw("Nhập phiên đăng nhập từ CLI Codex trên máy"),
             ]),
             Line::from(vec![
-                Span::styled(
-                    " [3 / m] ",
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled(" [3 / m] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
                 Span::raw("Nhập token xác thực thủ công"),
             ]),
             Line::from(vec![
@@ -1245,21 +1110,11 @@ fn render_add_menu_modal(f: &mut Frame, agent: Agent) {
         Agent::Claude => vec![
             Line::from(""),
             Line::from(vec![
-                Span::styled(
-                    " [1 / c] ",
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled(" [1 / c] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
                 Span::raw("Nhập phiên đăng nhập từ CLI Claude Code trên máy"),
             ]),
             Line::from(vec![
-                Span::styled(
-                    " [2 / m] ",
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled(" [2 / m] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
                 Span::raw("Nhập session token / cookie thủ công"),
             ]),
             Line::from(""),
@@ -1300,23 +1155,16 @@ fn render_codex_login_modal(f: &mut Frame, auth_url: Option<&str>, status: &str,
         Line::from(""),
         Line::from(vec![
             Span::styled("Trạng thái: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                status,
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
+            Span::styled(status, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Span::raw(format!(" ({})", message)),
         ]),
         Line::from(""),
-        Line::from(vec![Span::styled(
-            "Liên kết xác thực: ",
-            Style::default().fg(Color::DarkGray),
-        )]),
-        Line::from(vec![Span::styled(
-            url_display,
-            Style::default().fg(Color::Yellow),
-        )]),
+        Line::from(vec![
+            Span::styled("Liên kết xác thực: ", Style::default().fg(Color::DarkGray)),
+        ]),
+        Line::from(vec![
+            Span::styled(url_display, Style::default().fg(Color::Yellow)),
+        ]),
         Line::from(""),
         Line::from(vec![
             Span::styled(" [Esc / c] ", Style::default().fg(Color::Red)),

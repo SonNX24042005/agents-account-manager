@@ -110,7 +110,8 @@ impl CodexLogin {
                     // Quét lại quota ngay khi hoàn tất đăng nhập
                     let _ = agents.refresh(&client).await;
                     status.status = "completed".into();
-                    status.message = "Đã đăng nhập và thêm tài khoản Codex thành công.".into();
+                    status.message =
+                        "Đã đăng nhập và thêm tài khoản Codex thành công.".into();
                 }
                 Err(e) => {
                     status.status = "failed".into();
@@ -241,9 +242,7 @@ impl Session {
             }
         }
         self.input
-            .write_all(
-                b"{\"id\":3,\"method\":\"account/read\",\"params\":{\"refreshToken\":false}}\n",
-            )
+            .write_all(b"{\"id\":3,\"method\":\"account/read\",\"params\":{\"refreshToken\":false}}\n")
             .await?;
         let result = read_rpc(&mut self.output, 3).await?;
         let credentials = read_json(&self.dir.0.join("auth.json"))?;
@@ -256,12 +255,16 @@ impl Session {
             .map(|s| s.to_string())
             .or(email_from_jwt)
             .unwrap_or_else(|| "Tài khoản Codex".to_string());
-        agents.import(Agent::Codex, email, Some(credentials)).await
+        agents
+            .import(Agent::Codex, email, Some(credentials))
+            .await
     }
 }
 
 fn completed(message: &Value, login_id: &str) -> Result<bool> {
-    if message["method"] != "account/login/completed" || message["params"]["loginId"] != login_id {
+    if message["method"] != "account/login/completed"
+        || message["params"]["loginId"] != login_id
+    {
         return Ok(false);
     }
     if message["params"]["success"] != true {

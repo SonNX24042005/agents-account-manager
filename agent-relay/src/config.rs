@@ -8,7 +8,6 @@ pub struct Config {
     pub port: u16,
     pub master_key: String,
     pub data_dir: PathBuf,
-    pub upstream_url: String,
 }
 
 impl Default for Config {
@@ -35,16 +34,12 @@ impl Default for Config {
             .unwrap_or(8045);
 
         let master_key = Self::load_or_generate_master_key(&data_dir);
-        let upstream_url = std::env::var("AGENT_UPSTREAM_URL")
-            .or_else(|_| std::env::var("ANTIGRAVITY_UPSTREAM_URL"))
-            .unwrap_or_else(|_| "https://cloudcode-pa.googleapis.com".to_string());
 
         Self {
             host: "127.0.0.1".to_string(),
             port,
             master_key,
             data_dir,
-            upstream_url,
         }
     }
 }
@@ -77,9 +72,7 @@ impl Config {
     /// Load master API key from env var or persisted file. Generates a new random key on first run.
     fn load_or_generate_master_key(data_dir: &Path) -> String {
         // Priority 1: environment variable override
-        if let Ok(key) =
-            std::env::var("AGENT_MASTER_KEY").or_else(|_| std::env::var("ANTIGRAVITY_MASTER_KEY"))
-        {
+        if let Ok(key) = std::env::var("AGENT_MASTER_KEY").or_else(|_| std::env::var("ANTIGRAVITY_MASTER_KEY")) {
             if !key.is_empty() {
                 return key;
             }

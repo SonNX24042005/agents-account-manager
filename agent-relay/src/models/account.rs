@@ -371,10 +371,7 @@ mod tests {
             remaining_percentage: 0.0,
             reset_time: Some(past),
         };
-        assert_eq!(
-            bucket_past.reset_countdown(),
-            Some("đã đến giờ".to_string())
-        );
+        assert_eq!(bucket_past.reset_countdown(), Some("đã đến giờ".to_string()));
 
         let future_hours = (Utc::now() + chrono::Duration::minutes(135)).to_rfc3339();
         let bucket_hours = QuotaBucketInfo {

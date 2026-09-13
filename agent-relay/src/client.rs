@@ -72,9 +72,7 @@ impl UnifiedAccountDto {
                             if curr_pct < prev_pct {
                                 best = Some((bucket, cd));
                             } else if (curr_pct - prev_pct).abs() < f64::EPSILON {
-                                if let (Some(ref r_curr), Some(ref r_prev)) =
-                                    (&bucket.reset_time, &prev_bucket.reset_time)
-                                {
+                                if let (Some(ref r_curr), Some(ref r_prev)) = (&bucket.reset_time, &prev_bucket.reset_time) {
                                     if r_curr < r_prev {
                                         best = Some((bucket, cd));
                                     }
@@ -176,12 +174,7 @@ impl ApiClient {
             tokio::time::sleep(Duration::from_millis(150)).await;
             if self.is_service_running() {
                 // Kiểm tra thêm health check endpoint
-                if let Ok(res) = self
-                    .client
-                    .get(format!("{}/api/health", self.base_url()))
-                    .send()
-                    .await
-                {
+                if let Ok(res) = self.client.get(format!("{}/api/health", self.base_url())).send().await {
                     if res.status().is_success() {
                         return Ok(());
                     }
@@ -189,10 +182,7 @@ impl ApiClient {
             }
         }
 
-        bail!(
-            "Không thể kết nối tới dịch vụ Agent Relay trên cổng {}",
-            self.port
-        );
+        bail!("Không thể kết nối tới dịch vụ Agent Relay trên cổng {}", self.port);
     }
 
     pub async fn list_antigravity_accounts(&self) -> Result<Vec<PublicAccountDto>> {
@@ -207,10 +197,7 @@ impl ApiClient {
 
         if !res.status().is_success() {
             let error_text = res.text().await.unwrap_or_default();
-            bail!(
-                "Lỗi khi lấy danh sách tài khoản Antigravity: {}",
-                error_text
-            );
+            bail!("Lỗi khi lấy danh sách tài khoản Antigravity: {}", error_text);
         }
 
         let accounts: Vec<PublicAccountDto> = res
@@ -239,11 +226,7 @@ impl ApiClient {
 
         if !res.status().is_success() {
             let error_text = res.text().await.unwrap_or_default();
-            bail!(
-                "Lỗi khi lấy danh sách tài khoản {}: {}",
-                agent.name(),
-                error_text
-            );
+            bail!("Lỗi khi lấy danh sách tài khoản {}: {}", agent.name(), error_text);
         }
 
         let accounts: Vec<NativeAccountDto> = res
@@ -261,10 +244,7 @@ impl ApiClient {
                     .into_iter()
                     .map(|a| {
                         let is_exhausted = a.quota_percentage == Some(0.0)
-                            || a.quota_groups
-                                .iter()
-                                .flat_map(|g| &g.buckets)
-                                .any(|b| b.effective_percentage() <= 0.0);
+                            || a.quota_groups.iter().flat_map(|g| &g.buckets).any(|b| b.effective_percentage() <= 0.0);
                         let status = if a.is_active {
                             "Đang hoạt động".to_string()
                         } else if a.error.is_some() {
@@ -306,13 +286,9 @@ impl ApiClient {
                         } else if a.quota_status == "exhausted" {
                             Some(0.0)
                         } else {
-                            let buckets: Vec<_> =
-                                a.quota_groups.iter().flat_map(|g| &g.buckets).collect();
+                            let buckets: Vec<_> = a.quota_groups.iter().flat_map(|g| &g.buckets).collect();
                             if !buckets.is_empty() {
-                                buckets
-                                    .iter()
-                                    .map(|b| b.effective_percentage())
-                                    .reduce(f64::min)
+                                buckets.iter().map(|b| b.effective_percentage()).reduce(f64::min)
                             } else {
                                 None
                             }
@@ -386,9 +362,7 @@ impl ApiClient {
 
         if !res.status().is_success() {
             let error_val: Value = res.json().await.unwrap_or(Value::Null);
-            let msg = error_val["error"]
-                .as_str()
-                .unwrap_or("Chuyển tài khoản thất bại");
+            let msg = error_val["error"].as_str().unwrap_or("Chuyển tài khoản thất bại");
             bail!("{}", msg);
         }
         Ok(())
@@ -425,9 +399,7 @@ impl ApiClient {
 
         if !res.status().is_success() {
             let error_val: Value = res.json().await.unwrap_or(Value::Null);
-            let msg = error_val["error"]
-                .as_str()
-                .unwrap_or("Xóa tài khoản thất bại");
+            let msg = error_val["error"].as_str().unwrap_or("Xóa tài khoản thất bại");
             bail!("{}", msg);
         }
         Ok(())
@@ -494,14 +466,14 @@ impl ApiClient {
                     req = req.json(&payload);
                 }
 
-                let res = req.send().await.context("Không thể kết nối đến máy chủ")?;
+                let res = req
+                    .send()
+                    .await
+                    .context("Không thể kết nối đến máy chủ")?;
 
                 if !res.status().is_success() {
                     let err: Value = res.json().await.unwrap_or(Value::Null);
-                    bail!(
-                        "{}",
-                        err["error"].as_str().unwrap_or("Tự động chọn thất bại")
-                    );
+                    bail!("{}", err["error"].as_str().unwrap_or("Tự động chọn thất bại"));
                 }
                 let body: Value = res.json().await?;
                 let msg = body["message"]
@@ -535,10 +507,7 @@ impl ApiClient {
                         best_acc.quota_percentage.unwrap_or(0.0)
                     ))
                 } else {
-                    bail!(
-                        "Không tìm thấy tài khoản {} khả dụng để tự động chọn",
-                        agent_str
-                    );
+                    bail!("Không tìm thấy tài khoản {} khả dụng để tự động chọn", agent_str);
                 }
             }
         }
@@ -655,10 +624,7 @@ impl ApiClient {
 
         if !res.status().is_success() {
             let err: Value = res.json().await.unwrap_or(Value::Null);
-            bail!(
-                "{}",
-                err["error"].as_str().unwrap_or("Thêm tài khoản thất bại")
-            );
+            bail!("{}", err["error"].as_str().unwrap_or("Thêm tài khoản thất bại"));
         }
         Ok(())
     }
@@ -693,10 +659,7 @@ impl ApiClient {
 
         if !res.status().is_success() {
             let err: Value = res.json().await.unwrap_or(Value::Null);
-            bail!(
-                "{}",
-                err["error"].as_str().unwrap_or("Nhập tài khoản thất bại")
-            );
+            bail!("{}", err["error"].as_str().unwrap_or("Nhập tài khoản thất bại"));
         }
         Ok(())
     }
@@ -734,12 +697,7 @@ impl ApiClient {
 
         if !res.status().is_success() {
             let err: Value = res.json().await.unwrap_or(Value::Null);
-            bail!(
-                "{}",
-                err["error"]
-                    .as_str()
-                    .unwrap_or("Không khởi tạo được đăng nhập Codex")
-            );
+            bail!("{}", err["error"].as_str().unwrap_or("Không khởi tạo được đăng nhập Codex"));
         }
 
         let status: LoginStatusDto = res.json().await?;
@@ -882,3 +840,4 @@ mod tests {
         assert_eq!(dto.primary_reset_countdown(), Some("~3h 20m".to_string()));
     }
 }
+

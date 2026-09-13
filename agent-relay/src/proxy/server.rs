@@ -6,7 +6,7 @@ use crate::models::Account;
 use crate::oauth::GoogleOAuth;
 use crate::proxy::token_manager::TokenManager;
 use axum::{
-    body::{Body, Bytes},
+    body::Body,
     extract::{Query, State},
     http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode},
     middleware,
@@ -102,31 +102,6 @@ async fn require_auth(
         return next.run(req).await;
     }
 
-    // Exemption for Google Cloud Code / v1 / v1internal traffic from loopback or Cloud Code client
-    if is_passthrough_path(&path) {
-        let is_loopback = req
-            .extensions()
-            .get::<axum::extract::ConnectInfo<SocketAddr>>()
-            .map(|ci| ci.ip().is_loopback())
-            .unwrap_or_else(|| {
-                req.headers()
-                    .get(header::HOST)
-                    .and_then(|h| h.to_str().ok())
-                    .map(|h| {
-                        h.starts_with("127.0.0.1")
-                            || h.starts_with("localhost")
-                            || h.starts_with("[::1]")
-                    })
-                    .unwrap_or(false)
-            });
-
-        let is_cloud_code = is_google_cloud_code_traffic(req.headers());
-
-        if is_loopback || is_cloud_code {
-            return next.run(req).await;
-        }
-    }
-
     let is_connect = req.method() == axum::http::Method::CONNECT;
     let master_credential_is_valid =
         has_valid_master_credential(req.headers(), is_connect, &state.config.master_key);
@@ -149,33 +124,6 @@ async fn require_auth(
         )
             .into_response()
     }
-}
-
-fn is_passthrough_path(path: &str) -> bool {
-    path.starts_with("/v1/") || path.starts_with("/v1internal") || path.starts_with("/v1:")
-}
-
-fn is_google_cloud_code_traffic(headers: &HeaderMap) -> bool {
-    if headers.contains_key("x-goog-user-project")
-        || headers.contains_key("x-client-name")
-        || headers.contains_key("x-machine-id")
-        || headers.contains_key("x-vscode-sessionid")
-    {
-        return true;
-    }
-    if let Some(ua) = headers
-        .get(header::USER_AGENT)
-        .and_then(|v| v.to_str().ok())
-    {
-        let ua_lower = ua.to_lowercase();
-        if ua_lower.contains("antigravity")
-            || ua_lower.contains("cloudcode")
-            || ua_lower.contains("google-cloud-code")
-        {
-            return true;
-        }
-    }
-    false
 }
 
 fn browser_session_can_authorize(method: &axum::http::Method, path: &str) -> bool {
@@ -235,7 +183,8 @@ fn constant_time_token_matches(provided: &str, expected: &str) -> bool {
 }
 
 impl Server {
-    pub fn build_state(config: Config, token_manager: TokenManager) -> anyhow::Result<AppState> {
+    pub async fn run(config: Config, token_manager: TokenManager) -> anyhow::Result<()> {
+        let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
         let http_client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(120))
             .build()?;
@@ -246,7 +195,7 @@ impl Server {
                 &config.data_dir,
                 token_manager.settings.clone(),
             )?),
-            config,
+            config: config.clone(),
             token_manager,
             http_client,
             oauth_flows: Arc::new(Mutex::new(HashMap::new())),
@@ -255,13 +204,9 @@ impl Server {
             browser_bootstraps: Arc::new(Mutex::new(HashMap::new())),
             browser_sessions: Arc::new(Mutex::new(HashMap::new())),
         };
-        Ok(state)
-    }
-
-    pub fn build_router(state: AppState) -> anyhow::Result<Router> {
         let allowed_origins = [
-            format!("http://127.0.0.1:{}", state.config.port).parse::<HeaderValue>()?,
-            format!("http://localhost:{}", state.config.port).parse::<HeaderValue>()?,
+            format!("http://127.0.0.1:{}", config.port).parse::<HeaderValue>()?,
+            format!("http://localhost:{}", config.port).parse::<HeaderValue>()?,
         ];
 
         let app = Router::new()
@@ -273,14 +218,8 @@ impl Server {
             )
             .route("/api/agents/accounts", get(handle_native_accounts))
             .route("/api/agents/import", post(handle_native_import))
-            .route(
-                "/api/agents/codex/login",
-                get(handle_codex_login_status).post(handle_codex_login_start),
-            )
-            .route(
-                "/api/agents/codex/login/cancel",
-                post(handle_codex_login_cancel),
-            )
+            .route("/api/agents/codex/login", get(handle_codex_login_status).post(handle_codex_login_start))
+            .route("/api/agents/codex/login/cancel", post(handle_codex_login_cancel))
             .route("/api/agents/switch", post(handle_native_switch))
             .route("/api/agents/delete", post(handle_native_delete))
             .route("/api/agents/refresh", post(handle_agent_refresh))
@@ -317,15 +256,7 @@ impl Server {
                     .allow_methods(tower_http::cors::Any)
                     .allow_headers(tower_http::cors::Any),
             )
-            .with_state(state);
-
-        Ok(app)
-    }
-
-    pub async fn run(config: Config, token_manager: TokenManager) -> anyhow::Result<()> {
-        let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
-        let state = Self::build_state(config, token_manager)?;
-        let app = Self::build_router(state.clone())?;
+            .with_state(state.clone());
 
         let listener = tokio::net::TcpListener::bind(addr).await?;
 
@@ -358,11 +289,7 @@ impl Server {
             }
         });
         tracing::info!("Agent relay đang chạy tại http://{}", addr);
-        let result = axum::serve(
-            listener,
-            app.into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .await;
+        let result = axum::serve(listener, app).await;
         antigravity_task.abort();
         native_task.abort();
         result?;
@@ -437,21 +364,12 @@ async fn handle_codex_login_start(State(state): State<AppState>) -> Response {
 }
 
 async fn handle_codex_login_status(State(state): State<AppState>) -> Response {
-    (
-        [(header::CACHE_CONTROL, "no-store")],
-        Json(state.codex_login.status().await),
-    )
-        .into_response()
+    ([(header::CACHE_CONTROL, "no-store")], Json(state.codex_login.status().await)).into_response()
 }
 
 #[derive(Deserialize)]
-struct CancelCodexLogin {
-    id: String,
-}
-async fn handle_codex_login_cancel(
-    State(state): State<AppState>,
-    Json(payload): Json<CancelCodexLogin>,
-) -> Response {
+struct CancelCodexLogin { id: String }
+async fn handle_codex_login_cancel(State(state): State<AppState>, Json(payload): Json<CancelCodexLogin>) -> Response {
     agent_result(state.codex_login.cancel(&payload.id).await)
 }
 
@@ -718,36 +636,8 @@ async fn handle_auto_select_highest_gemini(
         None
     };
 
-    let is_enabled = state
-        .token_manager
-        .settings
-        .flags
-        .lock()
-        .await
-        .enabled(crate::proxy::selection::Agent::Antigravity);
-    if !is_enabled {
-        let current = state.token_manager.get_active_account().await;
-        let email = current
-            .as_ref()
-            .map(|a| a.email.clone())
-            .unwrap_or_default();
-        return (
-            StatusCode::OK,
-            Json(json!({
-                "status": "disabled",
-                "message": "Chế độ tự động chọn tài khoản cho Antigravity đang tắt; giữ nguyên tài khoản hiện tại.",
-                "account": email,
-                "data": current.as_ref().map(PublicAccount::from),
-            })),
-        )
-            .into_response();
-    }
-
     let target_category = if let Some(ref model) = payload.as_ref().and_then(|p| p.model.as_ref()) {
-        state
-            .token_manager
-            .model_detector
-            .record_cli_model_hint(model);
+        state.token_manager.model_detector.record_cli_model_hint(model);
         crate::proxy::model_detector::TargetModelCategory::from_model_name(model)
     } else if let Some(ref conv_id) = payload.as_ref().and_then(|p| p.conversation.as_ref()) {
         state
@@ -1283,316 +1173,63 @@ async fn handle_passthrough_forwarding(
             .into_response();
     }
 
-    let incoming_headers = req.headers().clone();
-    tracing::info!(
-        "[Passthrough Forwarder] Request {} {} headers: {:?}",
-        method,
-        path,
-        incoming_headers
-    );
-    let body_bytes = match axum::body::to_bytes(req.into_body(), 16 * 1024 * 1024).await {
+    let body_bytes = match axum::body::to_bytes(req.into_body(), 10 * 1024 * 1024).await {
         Ok(bytes) => bytes,
         Err(_) => {
-            return (StatusCode::PAYLOAD_TOO_LARGE, "Request body exceeds 16 MiB").into_response()
+            return (StatusCode::PAYLOAD_TOO_LARGE, "Request body exceeds 10 MiB").into_response()
         }
     };
 
-    let max_attempts = 3;
-    let mut first_account_id: Option<String> = None;
-    let mut last_response: Option<Response> = None;
-
-    for attempt in 0..max_attempts {
-        let account = if attempt == 0 {
-            match state.token_manager.select_best_account().await {
-                Ok(acc) => acc,
-                Err(_e) => {
-                    return (
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        Json(json!({ "error": "No available account in pool" })),
-                    )
-                        .into_response();
-                }
-            }
-        } else {
-            match state.token_manager.select_best_account_for_rotation().await {
-                Ok(acc) => acc,
-                Err(e) => {
-                    tracing::warn!(
-                        "[Passthrough Forwarder] No more available accounts in pool after attempt {}: {}",
-                        attempt,
-                        e
-                    );
-                    break;
-                }
-            }
-        };
-
-        if first_account_id.is_none() {
-            first_account_id = Some(account.id.clone());
+    // Pick best account from pool
+    let account = match state.token_manager.select_best_account().await {
+        Ok(acc) => acc,
+        Err(_) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "error": "No available account in pool" })),
+            )
+                .into_response();
         }
+    };
 
-        let upstream_base = &state.config.upstream_url;
-        let target_url = format!("{}{}", upstream_base.trim_end_matches('/'), path);
-        tracing::info!(
-            "[Passthrough Forwarder] (Attempt {}) Forwarding {} {} via account: {}",
-            attempt + 1,
-            method,
-            path,
-            account.email
-        );
+    let target_url = format!("https://cloudcode-pa.googleapis.com{}", path);
+    tracing::info!(
+        "[Passthrough Forwarder] Forwarding {} {} via account: {}",
+        method,
+        path,
+        account.email
+    );
 
-        let mut upstream_req = state
-            .http_client
-            .request(method.clone(), &target_url)
-            .header("Authorization", format!("Bearer {}", account.access_token));
+    let res = state
+        .http_client
+        .request(method, &target_url)
+        .header("Host", "cloudcode-pa.googleapis.com")
+        .header("Authorization", format!("Bearer {}", account.access_token))
+        .header("Content-Type", "application/json")
+        .header("User-Agent", "Antigravity/1.0.0")
+        .body(body_bytes)
+        .send()
+        .await;
 
-        if target_url.contains("cloudcode-pa.googleapis.com") {
-            upstream_req = upstream_req.header("Host", "cloudcode-pa.googleapis.com");
-        }
-
-        for (name, value) in &incoming_headers {
-            let name_str = name.as_str();
-            if name_str != "host" && name_str != "authorization" && !is_hop_by_hop_header(name) {
-                upstream_req = upstream_req.header(name.clone(), value.clone());
-            }
-        }
-
-        if !incoming_headers.contains_key(header::CONTENT_TYPE) {
-            upstream_req = upstream_req.header("Content-Type", "application/json");
-        }
-        if !incoming_headers.contains_key(header::USER_AGENT) {
-            upstream_req = upstream_req.header("User-Agent", "Antigravity/1.0.0");
-        }
-
-        let send_res = upstream_req.body(body_bytes.clone()).send().await;
-
-        let response = match send_res {
-            Ok(resp) => resp,
-            Err(e) => {
-                tracing::warn!(
-                    "[Passthrough Forwarder] Network error forwarding to upstream on attempt {}: {}",
-                    attempt + 1,
-                    e
-                );
-                last_response = Some(
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(json!({ "error": e.to_string() })),
-                    )
-                        .into_response(),
-                );
-                continue;
-            }
-        };
-
-        let status = response.status();
-        let headers = response.headers().clone();
-
-        if status == StatusCode::TOO_MANY_REQUESTS
-            || status == StatusCode::UNAUTHORIZED
-            || status == StatusCode::FORBIDDEN
-        {
-            let error_body = response.bytes().await.unwrap_or_default();
-            let mut err_resp = Response::new(Body::from(error_body.clone()));
-            *err_resp.status_mut() = status;
+    match res {
+        Ok(response) => {
+            let status = response.status();
+            let headers = response.headers().clone();
+            let mut resp = Response::new(Body::from_stream(response.bytes_stream()));
+            *resp.status_mut() = status;
             for (name, value) in &headers {
                 if !is_hop_by_hop_header(name) {
-                    err_resp.headers_mut().append(name, value.clone());
+                    resp.headers_mut().append(name, value.clone());
                 }
             }
-            last_response = Some(err_resp);
-
-            state
-                .token_manager
-                .mark_rate_limited(&account.email, 300)
-                .await;
-            tracing::warn!(
-                "[Passthrough Forwarder] Account {} received {} (rate limited/auth error): {}. Cooldown set for 300s. Rotating account...",
-                account.email,
-                status,
-                String::from_utf8_lossy(&error_body)
-            );
-            continue;
+            resp
         }
-
-        if status == StatusCode::OK {
-            let is_stream = headers
-                .get(header::CONTENT_TYPE)
-                .and_then(|v| v.to_str().ok())
-                .map(|ct| ct.contains("text/event-stream"))
-                .unwrap_or(false)
-                || path.contains("alt=sse");
-
-            if is_stream {
-                let mut stream = response.bytes_stream();
-                let first_chunk = stream.next().await;
-
-                match first_chunk {
-                    Some(Ok(chunk)) => {
-                        if is_early_quota_error(&chunk) {
-                            state
-                                .token_manager
-                                .mark_rate_limited(&account.email, 300)
-                                .await;
-                            tracing::warn!(
-                                "[Passthrough Forwarder] Account {} received early quota error in first SSE chunk. Rotating account...",
-                                account.email
-                            );
-                            let mut err_resp = Response::new(Body::from(chunk));
-                            *err_resp.status_mut() = StatusCode::TOO_MANY_REQUESTS;
-                            last_response = Some(err_resp);
-                            continue;
-                        }
-
-                        let first_stream =
-                            futures_util::stream::once(futures_util::future::ready(Ok::<
-                                Bytes,
-                                reqwest::Error,
-                            >(
-                                chunk
-                            )));
-                        let combined_stream = first_stream.chain(stream);
-                        let mut resp = Response::new(Body::from_stream(combined_stream));
-                        *resp.status_mut() = StatusCode::OK;
-                        for (name, value) in &headers {
-                            if !is_hop_by_hop_header(name) {
-                                resp.headers_mut().append(name, value.clone());
-                            }
-                        }
-
-                        if let Some(first_id) = &first_account_id {
-                            if first_id != &account.id {
-                                let tm = state.token_manager.clone();
-                                let target_id = account.id.clone();
-                                tokio::spawn(async move {
-                                    if let Err(e) = tm.switch_account(&target_id).await {
-                                        tracing::error!(
-                                            "[Passthrough Forwarder] Failed to sync rotated account: {}",
-                                            e
-                                        );
-                                    } else {
-                                        tracing::info!(
-                                            "[Passthrough Forwarder] Successfully synced rotated account {} into keyring/IDE DB",
-                                            target_id
-                                        );
-                                    }
-                                });
-                            }
-                        }
-
-                        return resp.into_response();
-                    }
-                    Some(Err(e)) => {
-                        tracing::warn!(
-                            "[Passthrough Forwarder] Stream error reading first chunk: {}",
-                            e
-                        );
-                        last_response = Some(
-                            (
-                                StatusCode::BAD_GATEWAY,
-                                Json(json!({ "error": format!("Stream read error: {}", e) })),
-                            )
-                                .into_response(),
-                        );
-                        continue;
-                    }
-                    None => {
-                        let mut resp = Response::new(Body::empty());
-                        *resp.status_mut() = StatusCode::OK;
-                        for (name, value) in &headers {
-                            if !is_hop_by_hop_header(name) {
-                                resp.headers_mut().append(name, value.clone());
-                            }
-                        }
-                        return resp.into_response();
-                    }
-                }
-            } else {
-                let mut resp = Response::new(Body::from_stream(response.bytes_stream()));
-                *resp.status_mut() = StatusCode::OK;
-                for (name, value) in &headers {
-                    if !is_hop_by_hop_header(name) {
-                        resp.headers_mut().append(name, value.clone());
-                    }
-                }
-
-                if let Some(first_id) = &first_account_id {
-                    if first_id != &account.id {
-                        let tm = state.token_manager.clone();
-                        let target_id = account.id.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = tm.switch_account(&target_id).await {
-                                tracing::error!(
-                                    "[Passthrough Forwarder] Failed to sync rotated account: {}",
-                                    e
-                                );
-                            } else {
-                                tracing::info!(
-                                    "[Passthrough Forwarder] Successfully synced rotated account {} into keyring/IDE DB",
-                                    target_id
-                                );
-                            }
-                        });
-                    }
-                }
-
-                return resp.into_response();
-            }
-        }
-
-        let mut resp = Response::new(Body::from_stream(response.bytes_stream()));
-        *resp.status_mut() = status;
-        for (name, value) in &headers {
-            if !is_hop_by_hop_header(name) {
-                resp.headers_mut().append(name, value.clone());
-            }
-        }
-        return resp.into_response();
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
     }
-
-    if let Some(resp) = last_response {
-        return resp;
-    }
-
-    (
-        StatusCode::SERVICE_UNAVAILABLE,
-        Json(json!({ "error": "All eligible accounts exhausted or rate limited" })),
-    )
-        .into_response()
-}
-
-fn is_early_quota_error(chunk_bytes: &[u8]) -> bool {
-    let s = String::from_utf8_lossy(chunk_bytes);
-    for line in s.lines() {
-        let trimmed = line.trim();
-        let json_text = if let Some(stripped) = trimmed.strip_prefix("data:") {
-            stripped.trim()
-        } else if trimmed.starts_with('{') {
-            trimmed
-        } else {
-            continue;
-        };
-
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_text) {
-            if let Some(err) = val.get("error") {
-                let code = err.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
-                let status = err.get("status").and_then(|s| s.as_str()).unwrap_or("");
-                let msg = err.get("message").and_then(|m| m.as_str()).unwrap_or("");
-                let msg_lower = msg.to_lowercase();
-                if code == 429
-                    || code == 403
-                    || code == 401
-                    || status == "RESOURCE_EXHAUSTED"
-                    || msg_lower.contains("quota")
-                    || msg_lower.contains("rate limit")
-                    || msg_lower.contains("exhausted")
-                {
-                    return true;
-                }
-            }
-        }
-    }
-    false
 }
 
 fn normalize_google_tunnel_target(authority: &str) -> Option<String> {
@@ -1623,9 +1260,8 @@ fn is_hop_by_hop_header(name: &HeaderName) -> bool {
 mod tests {
     use super::{
         browser_session_can_authorize, constant_time_token_matches, cookie_value, escape_html,
-        has_valid_master_credential, is_early_quota_error, is_google_cloud_code_traffic,
-        is_passthrough_path, is_valid_email, normalize_google_tunnel_target, token_fingerprint,
-        PublicAccount,
+        has_valid_master_credential, is_valid_email, normalize_google_tunnel_target,
+        token_fingerprint, PublicAccount,
     };
     use crate::models::Account;
     use axum::http::{header, HeaderMap, HeaderValue};
@@ -1745,65 +1381,5 @@ mod tests {
         assert!(!serialized.contains("refresh-secret"));
         assert!(!serialized.contains("access_token"));
         assert!(!serialized.contains("refresh_token"));
-    }
-
-    #[test]
-    fn detects_early_quota_error_in_sse_frames() {
-        let err_429 = b"data: {\"error\": {\"code\": 429, \"message\": \"Resource has been exhausted\", \"status\": \"RESOURCE_EXHAUSTED\"}}\n\n";
-        assert!(is_early_quota_error(err_429));
-
-        let err_plain_json = b"{\"error\": {\"code\": 429, \"message\": \"Quota exceeded\"}}";
-        assert!(is_early_quota_error(err_plain_json));
-
-        let err_403_rate =
-            b"data: {\"error\": {\"code\": 403, \"message\": \"Rate limit exceeded\"}}\n\n";
-        assert!(is_early_quota_error(err_403_rate));
-
-        let valid_meta =
-            b"data: {\"__cloudCodeMeta\": {\"traceId\": \"projects/123/traces/456\"}}\n\n";
-        assert!(!is_early_quota_error(valid_meta));
-
-        let valid_candidate =
-            b"data: {\"response\": {\"candidates\": [{\"content\": {\"role\": \"model\"}}]}}\n\n";
-        assert!(!is_early_quota_error(valid_candidate));
-
-        let empty = b"";
-        assert!(!is_early_quota_error(empty));
-    }
-
-    #[test]
-    fn validates_passthrough_paths() {
-        assert!(is_passthrough_path(
-            "/v1internal:streamGenerateContent?alt=sse"
-        ));
-        assert!(is_passthrough_path("/v1internal/models"));
-        assert!(is_passthrough_path("/v1/models"));
-        assert!(is_passthrough_path("/v1:generateContent"));
-        assert!(!is_passthrough_path("/api/accounts"));
-        assert!(!is_passthrough_path("/admin"));
-        assert!(!is_passthrough_path("/"));
-    }
-
-    #[test]
-    fn recognizes_google_cloud_code_traffic() {
-        let mut headers = HeaderMap::new();
-        assert!(!is_google_cloud_code_traffic(&headers));
-
-        headers.insert(
-            header::USER_AGENT,
-            HeaderValue::from_static("Antigravity/1.0.0"),
-        );
-        assert!(is_google_cloud_code_traffic(&headers));
-
-        let mut headers2 = HeaderMap::new();
-        headers2.insert(
-            "x-goog-user-project",
-            HeaderValue::from_static("aicode-consumers"),
-        );
-        assert!(is_google_cloud_code_traffic(&headers2));
-
-        let mut headers3 = HeaderMap::new();
-        headers3.insert(header::USER_AGENT, HeaderValue::from_static("Mozilla/5.0"));
-        assert!(!is_google_cloud_code_traffic(&headers3));
     }
 }

@@ -61,8 +61,7 @@ impl GoogleOAuth {
         let config_path = if agent_path.exists() {
             agent_path
         } else {
-            home.join(".antigravity-relay")
-                .join("oauth_credentials.json")
+            home.join(".antigravity-relay").join("oauth_credentials.json")
         };
         let content = std::fs::read_to_string(config_path).ok()?;
         let json: serde_json::Value = serde_json::from_str(&content).ok()?;

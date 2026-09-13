@@ -82,10 +82,7 @@ impl WarmupService {
             }
         }
 
-        bail!(
-            "Không thể gửi yêu cầu kích hoạt 5 giờ cho tài khoản Antigravity: {}",
-            email
-        )
+        bail!("Không thể gửi yêu cầu kích hoạt 5 giờ cho tài khoản Antigravity: {}", email)
     }
 
     /// Kiểm tra tài khoản Codex hoặc Claude có đủ điều kiện kích hoạt đếm ngược 5 giờ hay không:
@@ -226,12 +223,7 @@ mod tests {
         }];
 
         // Eligible when fresh
-        assert!(WarmupService::is_native_eligible(
-            Agent::Codex,
-            &groups,
-            None,
-            now
-        ));
+        assert!(WarmupService::is_native_eligible(Agent::Codex, &groups, None, now));
 
         // Ineligible when warmed up 1 hour ago
         assert!(!WarmupService::is_native_eligible(
@@ -252,28 +244,23 @@ mod tests {
         // Ineligible when 5h quota is below 100%
         let mut depleted_5h = groups.clone();
         depleted_5h[0].buckets[0].remaining_percentage = 90.0;
-        assert!(!WarmupService::is_native_eligible(
-            Agent::Codex,
-            &depleted_5h,
-            None,
-            now
-        ));
+        assert!(!WarmupService::is_native_eligible(Agent::Codex, &depleted_5h, None, now));
 
         // Ineligible when weekly quota is 0%
         let mut depleted_weekly = groups.clone();
         depleted_weekly[0].buckets[1].remaining_percentage = 0.0;
-        assert!(!WarmupService::is_native_eligible(
-            Agent::Codex,
-            &depleted_weekly,
-            None,
-            now
-        ));
+        assert!(!WarmupService::is_native_eligible(Agent::Codex, &depleted_weekly, None, now));
     }
 
     #[test]
     fn test_antigravity_warmup_eligibility() {
         let now = Utc::now();
-        let mut acc = Account::new("test@example.com".into(), "tok".into(), "ref".into(), 3600);
+        let mut acc = Account::new(
+            "test@example.com".into(),
+            "tok".into(),
+            "ref".into(),
+            3600,
+        );
         acc.quota_groups = vec![QuotaGroupInfo {
             name: "Gemini Models".into(),
             buckets: vec![
