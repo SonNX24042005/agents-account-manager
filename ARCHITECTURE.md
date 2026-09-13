@@ -195,3 +195,34 @@ Hệ thống tuân thủ các nguyên tắc bảo mật nghiêm ngặt:
 - **Chống duyệt thư mục (path traversal protection)**: Mọi thao tác đọc, sửa, xóa tài khoản đều kiểm tra nghiêm ngặt định dạng UUID của định danh tài khoản, từ chối mọi chuỗi chứa ký tự phân tách thư mục (`/`, `\`, `..`).
 - **Bảo vệ phiên giao diện web**: Giao diện web sử dụng cơ chế bootstrap token một lần (`/api/session/bootstrap`) và chuyển đổi sang session cookie (`aam_session`) với cờ `HttpOnly` và `SameSite=Strict`, không nhúng khóa bí mật vào mã JavaScript phía máy khách.
 - **Không can thiệp shell profile**: Không sửa đổi `.bashrc`, `.zshrc`, không tạo alias toàn cục gây xung đột môi trường.
+
+---
+
+## 7. Cơ chế tự động xoay vòng tài khoản trong suốt giữa phiên (mid-session transparent rotation)
+
+### 7.1. Bối cảnh và nguyên lý hoạt động
+Khi người dùng tương tác trong một phiên làm việc kéo dài với Antigravity CLI (`agy`), nhị phân `agy-bin` lưu access token cố định trên bộ nhớ RAM qua cấu trúc `ReuseTokenSource` của Go runtime và không bao giờ đọc lại đĩa hay OS Keyring giữa các lượt chat. Nếu tài khoản cạn hạn ngạch giữa phiên, máy chủ Google Cloud Code PA trả về mã lỗi HTTP 429 và CLI bị dừng đột ngột.
+
+Để giải quyết triệt để rào cản này mà không cần can thiệp bộ nhớ tiến trình:
+- Hệ thống tận dụng biến môi trường chính thức của Google Cloud Code CLI: `export CLOUD_CODE_URL="http://127.0.0.1:8045"`.
+- Toàn bộ lưu lượng API v1internal (`/v1internal:streamGenerateContent?alt=sse`, v.v.) được định tuyến qua daemon `agent-relay` trên giao diện loopback nội bộ.
+- Relay đóng vai trò proxy đảo chiều thông minh, tự động nhận diện phản hồi lỗi cạn hạn ngạch từ Google, đánh dấu thời gian chờ cho tài khoản hiện tại, tráo đổi access token sang tài khoản dự phòng có hạn ngạch cao nhất và gửi lại yêu cầu trong suốt đối với client.
+
+### 7.2. Các thành phần kỹ thuật cốt lõi
+• **Xác thực loopback an toàn (`require_auth`)**:
+  Middleware cho phép các yêu cầu có tiền tố `/v1/` hoặc `/v1internal/` bắt nguồn từ địa chỉ loopback (`127.0.0.1` hoặc `::1`) đi qua mà không yêu cầu API key quản trị, trong khi vẫn bảo vệ nghiêm ngặt các endpoint quản lý `/api/*`.
+• **Lưu đệm thân yêu cầu bằng `bytes::Bytes`**:
+  Thân yêu cầu HTTP được đọc vào cấu trúc `bytes::Bytes` với giới hạn tối đa 16 MiB. Cơ chế đếm tham chiếu nguyên tử (`Arc<[u8]>`) cho phép nhân bản vùng nhớ với chi phí $O(1)$ phục vụ vòng lặp thử lại mà không cấp phát lại bộ nhớ heap.
+• **Vòng lặp thử lại thông minh (`handle_passthrough_forwarding`)**:
+  Hệ thống hỗ trợ thử lại tối đa 3 lần. Khi gặp mã lỗi `429 Too Many Requests`, `401 Unauthorized` hoặc `403 Forbidden`, relay tự động kích hoạt `mark_rate_limited` với thời gian chờ 300 giây, đưa hạn ngạch của tài khoản lỗi về 0% và chọn tài khoản tiếp theo.
+• **Cổng chốt chunk đầu tiên (First-Chunk Response Gate)**:
+  Đối với dữ liệu stream SSE, relay tạm giữ tiêu đề `HTTP 200 OK` và kiểm tra chunk đầu tiên qua hàm `is_early_quota_error`. Nếu phát hiện lỗi hạn ngạch ẩn trong frame SSE đầu tiên, relay hủy stream lỗi và xoay sang tài khoản mới. Khi chunk đầu tiên hợp lệ, relay nối stream và truyền tiếp về cho client, loại bỏ hoàn toàn nguy cơ nhân đôi văn bản trên terminal.
+• **Tác vụ đồng bộ ngầm (`tokio::spawn`)**:
+  Khi chuyển đổi tài khoản thành công, relay kích hoạt tác vụ ngầm bất đồng bộ để ghi nhận tài khoản mới vào OS Keyring và SQLite IDE DB (`state.vscdb`), bảo đảm không làm nghẽn luồng truyền dữ liệu stream về cho người dùng.
+
+### 7.3. Bảo toàn ngữ cảnh và tài liệu chi tiết
+• **Bảo toàn ngữ cảnh 100%**: Do endpoint v1internal của Google hoạt động phi trạng thái (stateless), toàn bộ lịch sử câu hỏi, câu trả lời, chữ ký suy luận `thoughtSignature` và kết quả gọi công cụ (`functionCall`) đều nằm trọn trong mảng `contents` của thân yêu cầu và được giữ nguyên vẹn khi chuyển sang tài khoản mới.
+• **Tài liệu tham chiếu chuyên sâu**:
+  - Thiết kế kiến trúc chi tiết: `docs/architecture/MID_SESSION_ROTATION.md`.
+  - Hướng dẫn kiểm thử toàn diện: `docs/testing/TESTING_GUIDE.md`.
+

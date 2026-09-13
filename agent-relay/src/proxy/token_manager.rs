@@ -37,6 +37,14 @@ impl TokenManager {
         })
     }
 
+    pub fn set_switch_writer(&mut self, writer: fn(&Account) -> Result<()>) {
+        self.switch_writer = writer;
+    }
+
+    pub fn set_auth_path(&mut self, path: Option<std::path::PathBuf>) {
+        self.auth_path = path;
+    }
+
     pub async fn auto_select_if_enabled(&self) -> Result<()> {
         let flags = self.settings.flags.lock().await;
         if flags.enabled(Agent::Antigravity) {
@@ -232,7 +240,6 @@ impl TokenManager {
             .ok_or_else(|| anyhow!("Không có tài khoản còn quota"))
     }
 
-    #[allow(dead_code)]
     pub async fn mark_rate_limited(&self, email: &str, cooldown_seconds: i64) {
         let mut list = self.accounts.write().await;
         if let Some(account) = list.iter_mut().find(|a| a.email == email) {
@@ -251,6 +258,10 @@ impl TokenManager {
         let mut list = self.accounts.write().await;
         for acc in list.iter_mut() {
             acc.rate_limit_until = None;
+            if acc.quota_percentage == 0.0 {
+                acc.quota_percentage = 100.0;
+                acc.quota_checked_at = Some(chrono::Utc::now());
+            }
             let _ = self.store.save(acc);
         }
     }

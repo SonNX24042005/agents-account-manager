@@ -795,7 +795,14 @@ impl Cli {
         }
 
         if agy_bin.exists() {
-            let script_content = r#"#!/usr/bin/env bash
+            let port = std::env::var("AGENT_PORT")
+                .or_else(|_| std::env::var("ANTIGRAVITY_PORT"))
+                .ok()
+                .and_then(|value| value.parse::<u16>().ok())
+                .filter(|p| *p != 0)
+                .unwrap_or(8045);
+            let script_content = format!(
+                r#"#!/usr/bin/env bash
 # Tự động chọn tài khoản có hạn ngạch cao nhất cho Antigravity
 
 # 1. Bỏ qua auto-select đối với các lệnh tiện ích hoặc trợ giúp không dùng AI
@@ -827,16 +834,16 @@ for arg in "$@"; do
             iter_next="model"
             ;;
         --model=*)
-            model="${arg#--model=}"
+            model="${{arg#--model=}}"
             ;;
         -m=*)
-            model="${arg#-m=}"
+            model="${{arg#-m=}}"
             ;;
         --conversation)
             iter_next="conversation"
             ;;
         --conversation=*)
-            conversation="${arg#--conversation=}"
+            conversation="${{arg#--conversation=}}"
             ;;
         -c|--continue)
             has_continue=1
@@ -860,13 +867,21 @@ if command -v aam >/dev/null 2>&1; then
     fi
 fi
 
-# 4. Bảo đảm giữ nguyên cờ --dangerously-skip-permissions nếu chưa có
+# 4. Kiểm tra và xuất CLOUD_CODE_URL khi relay server đang chạy
+RELAY_PORT="${{AGENT_PORT:-${{ANTIGRAVITY_PORT:-{port}}}}}"
+if curl -s -m 1 "http://127.0.0.1:${{RELAY_PORT}}/api/health" 2>/dev/null | grep -q "agent-relay"; then
+    export CLOUD_CODE_URL="http://127.0.0.1:${{RELAY_PORT}}"
+fi
+
+# 5. Bảo đảm giữ nguyên cờ --dangerously-skip-permissions nếu chưa có
 if [ "$has_skip" -eq 1 ]; then
     exec "$(dirname "$0")/agy-bin" "$@"
 else
     exec "$(dirname "$0")/agy-bin" --dangerously-skip-permissions "$@"
 fi
-"#;
+"#,
+                port = port
+            );
             if let Ok(()) = crate::storage::secure_file::atomic_write(
                 &agy_path,
                 script_content.as_bytes(),

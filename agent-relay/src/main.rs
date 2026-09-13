@@ -1,17 +1,7 @@
-mod cli;
-mod client;
-mod config;
-mod device;
-mod models;
-mod oauth;
-mod proxy;
-mod storage;
-mod tui;
-
-use cli::Cli;
-use config::Config;
-use proxy::{Server, TokenManager};
-use storage::AccountStore;
+use agent_relay::cli::Cli;
+use agent_relay::config::Config;
+use agent_relay::proxy::{Server, TokenManager};
+use agent_relay::storage::AccountStore;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main(worker_threads = 2)]
@@ -38,7 +28,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("[Config] Data directory: {:?}", config.data_dir);
 
     // Ensure agy wrapper is configured if agy CLI is present on this machine
-    cli::Cli::setup_agy_wrapper_auto();
+    Cli::setup_agy_wrapper_auto();
 
     // 3. Initialize Account Storage & Token Pool
     let store = AccountStore::new(config.accounts_dir());
