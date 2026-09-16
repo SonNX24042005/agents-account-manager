@@ -36,16 +36,64 @@ pub struct AppState {
     codex_login: Arc<CodexLogin>,
     pub http_client: reqwest::Client,
     oauth_flows: Arc<Mutex<HashMap<String, OAuthFlow>>>,
+    completed_flows: Arc<Mutex<HashMap<String, CompletedFlow>>>,
+    failed_flows: Arc<Mutex<HashMap<String, FailedFlow>>>,
     tunnel_limit: Arc<Semaphore>,
     refresh_gate: Arc<Semaphore>,
     browser_bootstraps: Arc<Mutex<HashMap<[u8; 32], Instant>>>,
     browser_sessions: Arc<Mutex<HashMap<[u8; 32], Instant>>>,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
 struct OAuthFlow {
     redirect_uri: String,
     code_verifier: String,
-    expires_at: Instant,
+    expires_at_epoch: i64,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct CompletedFlow {
+    email: String,
+    completed_at_epoch: i64,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct FailedFlow {
+    error: String,
+    failed_at_epoch: i64,
+}
+
+fn load_pending_oauth_flows(data_dir: &std::path::Path) -> HashMap<String, OAuthFlow> {
+    let path = data_dir.join("oauth_pending.json");
+    if !path.exists() {
+        return HashMap::new();
+    }
+    match std::fs::read_to_string(&path) {
+        Ok(content) => {
+            if let Ok(flows) = serde_json::from_str::<HashMap<String, OAuthFlow>>(&content) {
+                let now = chrono::Utc::now().timestamp();
+                flows.into_iter().filter(|(_, f)| f.expires_at_epoch > now).collect()
+            } else {
+                HashMap::new()
+            }
+        }
+        Err(_) => HashMap::new(),
+    }
+}
+
+fn save_pending_oauth_flows(data_dir: &std::path::Path, flows: &HashMap<String, OAuthFlow>) {
+    let path = data_dir.join("oauth_pending.json");
+    let now = chrono::Utc::now().timestamp();
+    let valid: HashMap<_, _> = flows
+        .iter()
+        .filter(|(_, f)| f.expires_at_epoch > now)
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    if valid.is_empty() {
+        let _ = std::fs::remove_file(&path);
+    } else if let Ok(data) = serde_json::to_vec(&valid) {
+        let _ = crate::storage::secure_file::atomic_write(&path, &data, 0o600);
+    }
 }
 
 #[derive(Serialize)]
@@ -189,6 +237,7 @@ impl Server {
             .timeout(std::time::Duration::from_secs(120))
             .build()?;
 
+        let initial_oauth_flows = load_pending_oauth_flows(&config.data_dir);
         let state = AppState {
             codex_login: Arc::new(CodexLogin::new(config.data_dir.clone())),
             agents: Arc::new(AgentManager::new(
@@ -198,7 +247,9 @@ impl Server {
             config: config.clone(),
             token_manager,
             http_client,
-            oauth_flows: Arc::new(Mutex::new(HashMap::new())),
+            oauth_flows: Arc::new(Mutex::new(initial_oauth_flows)),
+            completed_flows: Arc::new(Mutex::new(HashMap::new())),
+            failed_flows: Arc::new(Mutex::new(HashMap::new())),
             tunnel_limit: Arc::new(Semaphore::new(16)),
             refresh_gate: Arc::new(Semaphore::new(1)),
             browser_bootstraps: Arc::new(Mutex::new(HashMap::new())),
@@ -242,6 +293,7 @@ impl Server {
             )
             .route("/api/accounts/reset", post(handle_reset_cooldowns))
             .route("/api/accounts/oauth/start", get(handle_oauth_start))
+            .route("/api/accounts/oauth/status", get(handle_oauth_status))
             .route("/api/accounts/oauth/callback", get(handle_oauth_callback))
             .route(
                 "/api/preference",
@@ -750,8 +802,8 @@ async fn handle_oauth_start(State(state): State<AppState>) -> impl IntoResponse 
 
     {
         let mut flows = state.oauth_flows.lock().await;
-        let now = Instant::now();
-        flows.retain(|_, flow| flow.expires_at > now);
+        let now = chrono::Utc::now().timestamp();
+        flows.retain(|_, flow| flow.expires_at_epoch > now);
         if flows.len() >= 128 {
             return (
                 StatusCode::TOO_MANY_REQUESTS,
@@ -764,17 +816,78 @@ async fn handle_oauth_start(State(state): State<AppState>) -> impl IntoResponse 
             OAuthFlow {
                 redirect_uri: redirect_uri.clone(),
                 code_verifier,
-                expires_at: now + Duration::from_secs(600),
+                expires_at_epoch: now + 600,
             },
         );
+        save_pending_oauth_flows(&state.config.data_dir, &flows);
     }
 
     let auth_url = GoogleOAuth::build_auth_url(&redirect_uri, &oauth_state, &code_challenge);
     (
         StatusCode::OK,
-        Json(json!({ "auth_url": auth_url, "redirect_uri": redirect_uri })),
+        Json(json!({
+            "auth_url": auth_url,
+            "redirect_uri": redirect_uri,
+            "state": oauth_state,
+        })),
     )
         .into_response()
+}
+
+#[derive(Deserialize)]
+struct OAuthStatusQuery {
+    state: String,
+}
+
+async fn handle_oauth_status(
+    State(state): State<AppState>,
+    Query(query): Query<OAuthStatusQuery>,
+) -> impl IntoResponse {
+    let state_key = &query.state;
+    // 1. Kiểm tra phiên đã thành công
+    {
+        let completed = state.completed_flows.lock().await;
+        if let Some(flow) = completed.get(state_key) {
+            return Json(json!({
+                "status": "completed",
+                "email": flow.email,
+            }))
+            .into_response();
+        }
+    }
+    // 2. Kiểm tra phiên thất bại
+    {
+        let failed = state.failed_flows.lock().await;
+        if let Some(flow) = failed.get(state_key) {
+            return Json(json!({
+                "status": "failed",
+                "message": flow.error,
+            }))
+            .into_response();
+        }
+    }
+    // 3. Kiểm tra phiên đang chờ
+    let now = chrono::Utc::now().timestamp();
+    {
+        let flows = state.oauth_flows.lock().await;
+        if let Some(flow) = flows.get(state_key) {
+            if flow.expires_at_epoch > now {
+                return Json(json!({ "status": "pending" })).into_response();
+            }
+        }
+    }
+    let disk_flows = load_pending_oauth_flows(&state.config.data_dir);
+    if let Some(flow) = disk_flows.get(state_key) {
+        if flow.expires_at_epoch > now {
+            return Json(json!({ "status": "pending" })).into_response();
+        }
+    }
+
+    Json(json!({
+        "status": "expired",
+        "message": "Phiên xác thực đã hết hạn hoặc không tìm thấy",
+    }))
+    .into_response()
 }
 
 #[derive(Deserialize)]
@@ -792,29 +905,77 @@ async fn handle_oauth_callback(
         Some(value) if !value.is_empty() => value,
         _ => return (StatusCode::BAD_REQUEST, "Missing OAuth state").into_response(),
     };
+
+    // 1. Nếu phiên OAuth này đã hoàn thành trước đó (ví dụ do tải lại trang hoặc prefetch), hiển thị trang thành công ngay
+    {
+        let completed = state.completed_flows.lock().await;
+        if let Some(flow) = completed.get(oauth_state) {
+            let nonce = random_urlsafe(24);
+            return secure_html_response(render_oauth_success_html(&flow.email, &nonce), &nonce);
+        }
+    }
+
     let flow = {
         let mut flows = state.oauth_flows.lock().await;
-        let now = Instant::now();
-        flows.retain(|_, flow| flow.expires_at > now);
-        flows.remove(oauth_state)
+        let now = chrono::Utc::now().timestamp();
+        flows.retain(|_, flow| flow.expires_at_epoch > now);
+        let maybe_flow = flows.remove(oauth_state);
+        if maybe_flow.is_none() {
+            // Thử nạp từ disk (trường hợp daemon được khởi động lại giữa chừng)
+            let mut disk_flows = load_pending_oauth_flows(&state.config.data_dir);
+            if let Some(disk_flow) = disk_flows.remove(oauth_state) {
+                save_pending_oauth_flows(&state.config.data_dir, &disk_flows);
+                if disk_flow.expires_at_epoch > now {
+                    Some(disk_flow)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            save_pending_oauth_flows(&state.config.data_dir, &flows);
+            maybe_flow
+        }
     };
+
     let flow = match flow {
         Some(flow) => flow,
-        None => return (StatusCode::BAD_REQUEST, "Invalid or expired OAuth state").into_response(),
+        None => {
+            let nonce = random_urlsafe(24);
+            let error_html = render_oauth_error_html(
+                "Phiên xác thực không hợp lệ hoặc đã hết hạn (Invalid or expired OAuth state). Vui lòng quay lại terminal và chạy lệnh 'aam agy login' để thử lại.",
+                &nonce,
+            );
+            return (StatusCode::BAD_REQUEST, secure_html_response(error_html, &nonce)).into_response();
+        }
     };
 
     if let Some(err) = query.error {
-        return (StatusCode::BAD_REQUEST, format!("OAuth Error: {}", err)).into_response();
+        {
+            let mut failed = state.failed_flows.lock().await;
+            failed.insert(
+                oauth_state.to_string(),
+                FailedFlow {
+                    error: err.clone(),
+                    failed_at_epoch: chrono::Utc::now().timestamp(),
+                },
+            );
+        }
+        let nonce = random_urlsafe(24);
+        let error_html = render_oauth_error_html(
+            &format!("Lỗi xác thực từ Google: {}", escape_html(&err)),
+            &nonce,
+        );
+        return (StatusCode::BAD_REQUEST, secure_html_response(error_html, &nonce)).into_response();
     }
 
     let code = match query.code {
         Some(c) => c,
         None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                "Missing code parameter".to_string(),
-            )
-                .into_response()
+            let nonce = random_urlsafe(24);
+            let error_html = render_oauth_error_html("Thiếu tham số mã ủy quyền (code)", &nonce);
+            return (StatusCode::BAD_REQUEST, secure_html_response(error_html, &nonce)).into_response();
         }
     };
 
@@ -843,8 +1004,17 @@ async fn handle_oauth_callback(
                 Ok(data) => data,
                 Err(error) => {
                     tracing::warn!("[OAuth] Invalid token response: {}", error);
-                    return (StatusCode::BAD_GATEWAY, "Invalid OAuth token response")
-                        .into_response();
+                    let mut failed = state.failed_flows.lock().await;
+                    failed.insert(
+                        oauth_state.to_string(),
+                        FailedFlow {
+                            error: "Invalid token response from Google".to_string(),
+                            failed_at_epoch: chrono::Utc::now().timestamp(),
+                        },
+                    );
+                    let nonce = random_urlsafe(24);
+                    let error_html = render_oauth_error_html("Phản hồi token từ Google không hợp lệ", &nonce);
+                    return (StatusCode::BAD_GATEWAY, secure_html_response(error_html, &nonce)).into_response();
                 }
             };
             let access_token = token_data["access_token"]
@@ -857,11 +1027,9 @@ async fn handle_oauth_callback(
                 .to_string();
             let expires_in = token_data["expires_in"].as_i64().unwrap_or(3600);
             if access_token.is_empty() || access_token.len() > 16 * 1024 {
-                return (
-                    StatusCode::BAD_GATEWAY,
-                    "OAuth response did not contain a valid access token",
-                )
-                    .into_response();
+                let nonce = random_urlsafe(24);
+                let error_html = render_oauth_error_html("Google không trả về access token hợp lệ", &nonce);
+                return (StatusCode::BAD_GATEWAY, secure_html_response(error_html, &nonce)).into_response();
             }
 
             // Fetch user info email
@@ -882,11 +1050,9 @@ async fn handle_oauth_callback(
             let email = match userinfo["email"].as_str() {
                 Some(value) if is_valid_email(value) => value.to_string(),
                 _ => {
-                    return (
-                        StatusCode::BAD_GATEWAY,
-                        "OAuth user info did not contain a valid email",
-                    )
-                        .into_response()
+                    let nonce = random_urlsafe(24);
+                    let error_html = render_oauth_error_html("Không thể lấy thông tin email từ Google", &nonce);
+                    return (StatusCode::BAD_GATEWAY, secure_html_response(error_html, &nonce)).into_response();
                 }
             };
             let account = Account::new(
@@ -899,19 +1065,58 @@ async fn handle_oauth_callback(
             // Save to pool and auto-switch
             if let Err(error) = state.token_manager.add_account(account).await {
                 tracing::error!("[OAuth] Failed to persist account: {}", error);
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to save OAuth account",
-                )
-                    .into_response();
+                let nonce = random_urlsafe(24);
+                let error_html = render_oauth_error_html("Lỗi khi lưu trữ tài khoản vào aam", &nonce);
+                return (StatusCode::INTERNAL_SERVER_ERROR, secure_html_response(error_html, &nonce)).into_response();
+            }
+
+            // Ghi nhớ phiên hoàn tất trong 5 phút
+            {
+                let mut completed = state.completed_flows.lock().await;
+                let now = chrono::Utc::now().timestamp();
+                completed.retain(|_, f| now - f.completed_at_epoch < 300);
+                completed.insert(
+                    oauth_state.to_string(),
+                    CompletedFlow {
+                        email: email.clone(),
+                        completed_at_epoch: now,
+                    },
+                );
             }
 
             spawn_quota_refresh(&state);
 
             let nonce = random_urlsafe(24);
-            let safe_email = escape_html(&email);
-            let success_html = format!(
-                r#"<!DOCTYPE html>
+            secure_html_response(render_oauth_success_html(&email, &nonce), &nonce)
+        }
+        res => {
+            let error_text = if let Ok(r) = res {
+                format!("Mã trạng thái: {}", r.status())
+            } else {
+                "Không thể kết nối đến máy chủ Google OAuth".to_string()
+            };
+            let mut failed = state.failed_flows.lock().await;
+            failed.insert(
+                oauth_state.to_string(),
+                FailedFlow {
+                    error: error_text.clone(),
+                    failed_at_epoch: chrono::Utc::now().timestamp(),
+                },
+            );
+            let nonce = random_urlsafe(24);
+            let error_html = render_oauth_error_html(
+                &format!("Lỗi khi đổi mã xác thực lấy token: {}", error_text),
+                &nonce,
+            );
+            (StatusCode::INTERNAL_SERVER_ERROR, secure_html_response(error_html, &nonce)).into_response()
+        }
+    }
+}
+
+fn render_oauth_success_html(email: &str, nonce: &str) -> String {
+    let safe_email = escape_html(email);
+    format!(
+        r#"<!DOCTYPE html>
 <html lang="vi" class="dark">
 <head>
   <meta charset="UTF-8">
@@ -920,14 +1125,17 @@ async fn handle_oauth_callback(
   <meta http-equiv="refresh" content="1.5;url=/">
   <style nonce="{nonce}">
     body {{ background: #0b0c10; color: #e4e4e7; min-height: 100vh; display: grid; place-items: center; font-family: sans-serif; }}
-    main {{ background: #121626; border: 1px solid #3b82f666; border-radius: 1rem; padding: 1.5rem; width: min(22rem, 90vw); text-align: center; }}
-    a {{ color: white; background: #2563eb; padding: .6rem 1rem; border-radius: .5rem; display: block; text-decoration: none; }}
+    main {{ background: #121626; border: 1px solid #3b82f666; border-radius: 1rem; padding: 1.5rem; width: min(24rem, 90vw); text-align: center; }}
+    h2 {{ color: #22c55e; margin-bottom: 0.5rem; }}
+    p {{ color: #94a3b8; margin-bottom: 1rem; }}
+    .email {{ color: #f8fafc; font-weight: bold; }}
+    a {{ color: white; background: #2563eb; padding: .6rem 1rem; border-radius: .5rem; display: block; text-decoration: none; font-size: 14px; }}
   </style>
 </head>
 <body>
   <main>
-    <h2>Đăng nhập thành công</h2>
-    <p>{safe_email}</p>
+    <h2>✓ Đăng nhập thành công</h2>
+    <p class="email">{safe_email}</p>
     <p>Đang tự động chuyển hướng về bảng điều khiển...</p>
     <a href="/">Quay về bảng điều khiển ngay</a>
   </main>
@@ -947,16 +1155,35 @@ async fn handle_oauth_callback(
   </script>
 </body>
 </html>"#
-            );
+    )
+}
 
-            secure_html_response(success_html, &nonce)
-        }
-        _ => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed to exchange OAuth code for tokens",
-        )
-            .into_response(),
-    }
+fn render_oauth_error_html(error_message: &str, nonce: &str) -> String {
+    let safe_msg = escape_html(error_message);
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Đăng nhập thất bại</title>
+  <style nonce="{nonce}">
+    body {{ background: #0b0c10; color: #e4e4e7; min-height: 100vh; display: grid; place-items: center; font-family: sans-serif; }}
+    main {{ background: #121626; border: 1px solid #ef444466; border-radius: 1rem; padding: 1.5rem; width: min(26rem, 90vw); text-align: center; }}
+    h2 {{ color: #ef4444; margin-bottom: 0.5rem; }}
+    p {{ color: #cbd5e1; font-size: 14px; line-height: 1.5; margin-bottom: 1rem; }}
+    .hint {{ font-size: 13px; color: #94a3b8; background: #1e293b; padding: 8px 12px; border-radius: 6px; display: inline-block; }}
+  </style>
+</head>
+<body>
+  <main>
+    <h2>✗ Đăng nhập thất bại</h2>
+    <p>{safe_msg}</p>
+    <div class="hint">Gợi ý: Mở terminal và chạy lại lệnh <code>aam agy login</code></div>
+  </main>
+</body>
+</html>"#
+    )
 }
 
 fn validate_account_input(payload: &AddAccountRequest) -> Result<(), &'static str> {
@@ -1381,5 +1608,52 @@ mod tests {
         assert!(!serialized.contains("refresh-secret"));
         assert!(!serialized.contains("access_token"));
         assert!(!serialized.contains("refresh_token"));
+    }
+
+    #[test]
+    fn oauth_persistence_saves_and_loads_valid_flows() {
+        let temp_dir = std::env::temp_dir().join(format!("aam-test-oauth-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let mut flows = std::collections::HashMap::new();
+        let now = chrono::Utc::now().timestamp();
+        flows.insert(
+            "state-1".to_string(),
+            super::OAuthFlow {
+                redirect_uri: "http://127.0.0.1:8045/callback".to_string(),
+                code_verifier: "verifier-1".to_string(),
+                expires_at_epoch: now + 300,
+            },
+        );
+        flows.insert(
+            "state-expired".to_string(),
+            super::OAuthFlow {
+                redirect_uri: "http://127.0.0.1:8045/callback".to_string(),
+                code_verifier: "verifier-expired".to_string(),
+                expires_at_epoch: now - 10,
+            },
+        );
+
+        super::save_pending_oauth_flows(&temp_dir, &flows);
+        let loaded = super::load_pending_oauth_flows(&temp_dir);
+
+        assert_eq!(loaded.len(), 1);
+        assert!(loaded.contains_key("state-1"));
+        assert!(!loaded.contains_key("state-expired"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn oauth_html_rendering_escapes_content() {
+        let success = super::render_oauth_success_html("<script>alert(1)</script>", "nonce-123");
+        assert!(!success.contains("<script>alert(1)</script>"));
+        assert!(success.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
+        assert!(success.contains("nonce=\"nonce-123\""));
+
+        let error = super::render_oauth_error_html("Error with <b>bold</b> & 'quotes'", "nonce-456");
+        assert!(!error.contains("<b>bold</b>"));
+        assert!(error.contains("&lt;b&gt;bold&lt;/b&gt;"));
+        assert!(error.contains("nonce=\"nonce-456\""));
     }
 }

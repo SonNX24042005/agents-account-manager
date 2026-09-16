@@ -120,6 +120,13 @@ pub struct LoginStatusDto {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OAuthStatusDto {
+    pub status: String,
+    pub email: Option<String>,
+    pub message: Option<String>,
+}
+
 #[derive(Clone)]
 pub struct ApiClient {
     port: u16,
@@ -664,7 +671,7 @@ impl ApiClient {
         Ok(())
     }
 
-    pub async fn start_oauth_flow(&self) -> Result<String> {
+    pub async fn start_oauth_flow_with_state(&self) -> Result<(String, String)> {
         self.ensure_service_ready().await?;
         let res = self
             .client
@@ -682,7 +689,33 @@ impl ApiClient {
         let url = body["auth_url"]
             .as_str()
             .context("Phản hồi thiếu URL xác thực")?;
-        Ok(url.to_string())
+        let state = body["state"]
+            .as_str()
+            .context("Phản hồi thiếu OAuth state")?;
+        Ok((url.to_string(), state.to_string()))
+    }
+
+    pub async fn start_oauth_flow(&self) -> Result<String> {
+        let (url, _) = self.start_oauth_flow_with_state().await?;
+        Ok(url)
+    }
+
+    pub async fn get_oauth_status(&self, state: &str) -> Result<Option<OAuthStatusDto>> {
+        let res = self
+            .client
+            .get(format!("{}/api/accounts/oauth/status", self.base_url()))
+            .query(&[("state", state)])
+            .bearer_auth(&self.master_key)
+            .send()
+            .await;
+
+        match res {
+            Ok(res) if res.status().is_success() => {
+                let status: OAuthStatusDto = res.json().await?;
+                Ok(Some(status))
+            }
+            _ => Ok(None),
+        }
     }
 
     pub async fn start_codex_login(&self) -> Result<LoginStatusDto> {

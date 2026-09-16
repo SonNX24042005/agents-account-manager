@@ -429,6 +429,14 @@ impl Cli {
                 use std::os::unix::process::CommandExt;
                 cmd.process_group(0);
             }
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                const DETACHED_PROCESS: u32 = 0x00000008;
+                const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+                const CREATE_NO_WINDOW: u32 = 0x08000000;
+                cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
+            }
             cmd.spawn()
                 .context("Không thể khởi chạy tiến trình nền")?;
         }
@@ -2349,11 +2357,42 @@ fi
         match agent {
             Agent::Antigravity => {
                 println!("{} Đang khởi tạo phiên xác thực Google OAuth...", "[aam]".cyan());
-                let auth_url = client.start_oauth_flow().await?;
+                let (auth_url, state_token) = client.start_oauth_flow_with_state().await?;
                 println!("Vui lòng mở liên kết sau trên trình duyệt để hoàn tất đăng nhập:\n");
                 println!("  {}\n", auth_url.as_str().cyan().underlined());
                 let _ = Self::open_url(&auth_url);
-                println!("{}", "Sau khi cấp quyền thành công, tài khoản sẽ tự động được lưu vào aam.".dark_grey());
+                println!("{}", "Đang chờ xác nhận từ trình duyệt (nhấn Ctrl+C để hủy)...".dark_grey());
+                let mut completed = false;
+                for _ in 0..120 {
+                    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                    if let Ok(Some(status)) = client.get_oauth_status(&state_token).await {
+                        if status.status == "completed" {
+                            println!(
+                                "\n{} Đăng nhập Google OAuth thành công!{}",
+                                "✓".green().bold(),
+                                status
+                                    .email
+                                    .as_deref()
+                                    .map(|e| format!(" (Tài khoản: {})", e.cyan()))
+                                    .unwrap_or_default()
+                            );
+                            completed = true;
+                            break;
+                        } else if status.status == "failed" {
+                            bail!(
+                                "\n{} Đăng nhập Google OAuth thất bại: {}",
+                                "✗".red().bold(),
+                                status.message.unwrap_or_else(|| "Lỗi không xác định".to_string())
+                            );
+                        }
+                    }
+                }
+                if !completed {
+                    println!(
+                        "\n{}",
+                        "Đã hết thời gian chờ dòng lệnh. Bạn vẫn có thể hoàn tất đăng nhập trên trình duyệt nếu phiên chưa hết hạn.".yellow()
+                    );
+                }
             }
             Agent::Codex => {
                 println!("{} Đang khởi tạo phiên xác thực Codex...", "[aam]".cyan());

@@ -120,7 +120,7 @@ function Invoke-Install {
         try {
             Invoke-WebRequest -Uri $releaseUrl -OutFile $zipPath -UseBasicParsing -TimeoutSec 120
         } catch {
-            Write-Err "Không thể tải tệp phát hành từ $releaseUrl: $_"
+            Write-Err "Không thể tải tệp phát hành từ ${releaseUrl}: $_"
             exit 1
         }
 
