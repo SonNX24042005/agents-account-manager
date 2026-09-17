@@ -158,6 +158,40 @@ impl NativeAccount {
             .unwrap_or(regular)
     }
 
+    fn preserve_codex_anchor(&self, new_groups: &mut [QuotaGroupInfo], now: DateTime<Utc>) {
+        for (old_g, new_g) in self.quota_groups.iter().zip(new_groups.iter_mut()) {
+            for (old_b, new_b) in old_g.buckets.iter().zip(new_g.buckets.iter_mut()) {
+                if old_b.is_5h() && new_b.is_5h() && new_b.remaining_percentage >= 100.0 {
+                    if let (Some(old_reset_str), Some(new_reset_str)) =
+                        (&old_b.reset_time, &new_b.reset_time)
+                    {
+                        if let (Ok(old_reset), Ok(new_reset)) = (
+                            DateTime::parse_from_rfc3339(old_reset_str),
+                            DateTime::parse_from_rfc3339(new_reset_str),
+                        ) {
+                            let old_reset = old_reset.with_timezone(&Utc);
+                            let new_reset = new_reset.with_timezone(&Utc);
+                            // Khi tài khoản vẫn ở mức 100% (chưa có truy vấn thực tế mới),
+                            // nếu mốc reset cũ vẫn còn hiệu lực trong tương lai và mốc mới bị trượt xa hơn,
+                            // giữ nguyên mốc cũ để đồng hồ đếm lùi liên tục về 0.
+                            if old_reset > now && new_reset > old_reset {
+                                new_b.reset_time = Some(old_reset_str.clone());
+                            }
+                        }
+                    } else if old_b.reset_time.is_some() && new_b.reset_time.is_none() {
+                        if let Ok(old_reset) =
+                            DateTime::parse_from_rfc3339(old_b.reset_time.as_ref().unwrap())
+                        {
+                            if old_reset.with_timezone(&Utc) > now {
+                                new_b.reset_time = old_b.reset_time.clone();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn score(&self) -> Option<f64> {
         if !self.quota_is_fresh(Utc::now()) {
             return None;
@@ -522,7 +556,10 @@ impl AgentManager {
                             }
                             stored.credentials = credentials;
                             match groups {
-                                Ok(groups) => {
+                                Ok(mut groups) => {
+                                    if stored.agent == Agent::Codex {
+                                        stored.preserve_codex_anchor(&mut groups, Utc::now());
+                                    }
                                     stored.quota_groups = groups;
                                     stored.checked_at = Some(Utc::now());
                                     stored.error = None;
@@ -549,27 +586,41 @@ impl AgentManager {
                                             _ => None,
                                         };
                                         if let Some(tok) = token {
-                                            tokio::spawn(async move {
-                                                let res = match agent_type {
-                                                    Agent::Codex => {
-                                                        crate::proxy::warmup::WarmupService::warmup_codex(
-                                                            &client_clone,
-                                                            &tok,
-                                                            &email,
-                                                        )
-                                                        .await
+                                            let warmup_res = match agent_type {
+                                                Agent::Codex => {
+                                                    crate::proxy::warmup::WarmupService::warmup_codex(
+                                                        &client_clone,
+                                                        &tok,
+                                                        &email,
+                                                    )
+                                                    .await
+                                                }
+                                                Agent::Claude => {
+                                                    crate::proxy::warmup::WarmupService::warmup_claude(
+                                                        &client_clone,
+                                                        &tok,
+                                                        &email,
+                                                    )
+                                                    .await
+                                                }
+                                                _ => Ok(()),
+                                            };
+                                            match warmup_res {
+                                                Ok(()) => {
+                                                    stored.last_warmup_at = Some(now);
+                                                    if agent_type == Agent::Codex {
+                                                        // Gán ngay mốc neo 5 giờ để giao diện bắt đầu đếm lùi tức thì
+                                                        let anchor_reset = (now + chrono::Duration::hours(5)).to_rfc3339();
+                                                        for group in &mut stored.quota_groups {
+                                                            for bucket in &mut group.buckets {
+                                                                if bucket.is_5h() {
+                                                                    bucket.reset_time = Some(anchor_reset.clone());
+                                                                }
+                                                            }
+                                                        }
                                                     }
-                                                    Agent::Claude => {
-                                                        crate::proxy::warmup::WarmupService::warmup_claude(
-                                                            &client_clone,
-                                                            &tok,
-                                                            &email,
-                                                        )
-                                                        .await
-                                                    }
-                                                    _ => Ok(()),
-                                                };
-                                                if let Err(err) = res {
+                                                }
+                                                Err(err) => {
                                                     tracing::warn!(
                                                         "[Warmup] Không thể kích hoạt 5 giờ cho {} ({}): {}",
                                                         email,
@@ -577,8 +628,7 @@ impl AgentManager {
                                                         err
                                                     );
                                                 }
-                                            });
-                                            stored.last_warmup_at = Some(now);
+                                            }
                                         }
                                     }
                                 }
@@ -1598,5 +1648,78 @@ mod tests {
         assert_eq!(requests.len(), 2);
         assert_eq!(requests[0]["method"], "account/read");
         assert_eq!(requests[1]["method"], "account/rateLimits/read");
+    }
+
+    #[test]
+    fn preserve_codex_anchor_preserves_countdown_when_quota_remains_100_percent() {
+        let now = Utc::now();
+        let old_anchor = now + chrono::Duration::hours(4);
+        let old_account = NativeAccount {
+            id: uuid::Uuid::new_v4().to_string(),
+            agent: Agent::Codex,
+            email: "test@example.com".into(),
+            credentials: json!({}),
+            quota_groups: vec![QuotaGroupInfo {
+                name: "Codex".into(),
+                buckets: vec![
+                    QuotaBucketInfo {
+                        window: "FIVE_HOUR".into(),
+                        remaining_percentage: 100.0,
+                        reset_time: Some(old_anchor.to_rfc3339()),
+                    },
+                    QuotaBucketInfo {
+                        window: "WEEKLY".into(),
+                        remaining_percentage: 80.0,
+                        reset_time: Some((now + chrono::Duration::days(5)).to_rfc3339()),
+                    },
+                ],
+            }],
+            checked_at: Some(now - chrono::Duration::minutes(5)),
+            next_check: Some(now),
+            error: None,
+            last_warmup_at: Some(now - chrono::Duration::hours(1)),
+        };
+
+        // Scenario 1: OpenAI returns shifted resetsAt (now + 5h) while quota is still 100%
+        let shifted_reset = now + chrono::Duration::hours(5);
+        let mut new_groups = vec![QuotaGroupInfo {
+            name: "Codex".into(),
+            buckets: vec![
+                QuotaBucketInfo {
+                    window: "FIVE_HOUR".into(),
+                    remaining_percentage: 100.0,
+                    reset_time: Some(shifted_reset.to_rfc3339()),
+                },
+                QuotaBucketInfo {
+                    window: "WEEKLY".into(),
+                    remaining_percentage: 80.0,
+                    reset_time: Some((now + chrono::Duration::days(5)).to_rfc3339()),
+                },
+            ],
+        }];
+
+        old_account.preserve_codex_anchor(&mut new_groups, now);
+        // The old anchor must be preserved!
+        assert_eq!(
+            new_groups[0].buckets[0].reset_time,
+            Some(old_anchor.to_rfc3339())
+        );
+
+        // Scenario 2: User actually used quota (95% remaining) -> accept new reset time
+        let mut used_groups = vec![QuotaGroupInfo {
+            name: "Codex".into(),
+            buckets: vec![
+                QuotaBucketInfo {
+                    window: "FIVE_HOUR".into(),
+                    remaining_percentage: 95.0,
+                    reset_time: Some(shifted_reset.to_rfc3339()),
+                },
+            ],
+        }];
+        old_account.preserve_codex_anchor(&mut used_groups, now);
+        assert_eq!(
+            used_groups[0].buckets[0].reset_time,
+            Some(shifted_reset.to_rfc3339())
+        );
     }
 }

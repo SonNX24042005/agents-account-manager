@@ -152,6 +152,8 @@ impl WarmupService {
             .await?;
 
         if res.status().is_success() {
+            // Đọc trọn vẹn luồng dữ liệu phản hồi để máy chủ OpenAI hoàn tất suy luận và ghi nhận điểm neo hạn ngạch
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(15), res.bytes()).await;
             tracing::info!(
                 "[Warmup] Đã kích hoạt bộ đếm 5 giờ cho tài khoản Codex ({}) qua mô hình gpt-5.6-luna",
                 email
