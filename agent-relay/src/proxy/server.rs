@@ -676,6 +676,8 @@ async fn handle_switch_account(
 struct AutoSelectRequest {
     model: Option<String>,
     conversation: Option<String>,
+    #[serde(default)]
+    if_enabled: bool,
 }
 
 async fn handle_auto_select_highest_gemini(
@@ -701,13 +703,14 @@ async fn handle_auto_select_highest_gemini(
         state.token_manager.model_detector.get_effective_category()
     };
 
-    match state
-        .token_manager
-        .select_best_account_for_category(target_category)
-        .await
-    {
-        Ok((acc, cat)) => {
-            let _ = state.token_manager.switch_account(&acc.id).await;
+    let selected = if payload.as_ref().is_some_and(|p| p.if_enabled) {
+        state.token_manager.select_best_account_for_category_if_enabled(target_category).await
+    } else {
+        state.token_manager.select_best_account_for_category(target_category).await.map(Some)
+    };
+
+    match selected {
+        Ok(Some((acc, cat))) => {
             (
                 StatusCode::OK,
                 Json(json!({
@@ -720,6 +723,10 @@ async fn handle_auto_select_highest_gemini(
             )
                 .into_response()
         }
+        Ok(None) => (
+            StatusCode::OK,
+            Json(json!({ "status": "skipped", "message": "Chế độ tự động chọn đang tắt" })),
+        ).into_response(),
         Err(err) => (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": err.to_string() })),
@@ -1488,10 +1495,20 @@ mod tests {
     use super::{
         browser_session_can_authorize, constant_time_token_matches, cookie_value, escape_html,
         has_valid_master_credential, is_valid_email, normalize_google_tunnel_target,
-        token_fingerprint, PublicAccount,
+        token_fingerprint, AutoSelectRequest, PublicAccount,
     };
     use crate::models::Account;
     use axum::http::{header, HeaderMap, HeaderValue};
+
+    #[test]
+    fn auto_select_request_accepts_legacy_hints_and_conditional_mode() {
+        let legacy: AutoSelectRequest = serde_json::from_str(r#"{"model":"gemini"}"#).unwrap();
+        assert_eq!(legacy.model.as_deref(), Some("gemini"));
+        assert!(!legacy.if_enabled);
+
+        let conditional: AutoSelectRequest = serde_json::from_str(r#"{"if_enabled":true}"#).unwrap();
+        assert!(conditional.if_enabled);
+    }
 
     #[test]
     fn compares_api_tokens_without_plaintext_equality() {

@@ -84,7 +84,7 @@ Hạn ngạch của các nhà cung cấp AI (Google Cloud Code PA, OpenAI ChatGP
 ## 3. Cơ chế script bọc nhị phân cho Antigravity CLI (`agy`)
 
 ### 3.1. Mục tiêu thiết kế
-- Cho phép người dùng chạy lệnh `agy` tự nhiên trên terminal mà luôn được tự động chuyển sang tài khoản có hạn ngạch cao nhất.
+- Cho phép người dùng chạy lệnh `agy` tự nhiên trên terminal và tự động chuyển sang tài khoản có hạn ngạch cao nhất khi chế độ tự động đang bật.
 - Tự động chuyển tiếp cờ an toàn `--dangerously-skip-permissions` để tránh gián đoạn khi thực thi tác vụ tự động.
 - Không sửa đổi biến môi trường, không tạo alias trong shell profile (`.bashrc`, `.zshrc`).
 - Đảm bảo an toàn tuyệt đối cho tệp nhị phân gốc: tự động hoàn nguyên khi gỡ cài đặt.
@@ -116,9 +116,9 @@ Khi tính năng script bọc được kích hoạt:
 
    if command -v aam >/dev/null 2>&1; then
        if [ -n "$model" ]; then
-           aam agy auto-select --model "$model" >/dev/null 2>&1
+           aam agy auto-select --if-enabled --model "$model" >/dev/null 2>&1
        else
-           aam agy auto-select >/dev/null 2>&1
+           aam agy auto-select --if-enabled >/dev/null 2>&1
        fi
    fi
 
@@ -138,8 +138,8 @@ Khi tính năng script bọc được kích hoạt:
    fi
    ```
 3. Khi người dùng thực thi `agy <lệnh>`:
-   - Script tự động bóc tách cờ `--model` hoặc `-m` (nếu có) từ danh sách đối số và gọi `aam agy auto-select --model <mô-hình>` (hoặc gọi tự động theo phiên làm việc gần nhất nếu dùng `-c` / `--continue`).
-   - Script gọi ngầm `aam agy auto-select` để kích hoạt tài khoản tối ưu và đồng bộ thông tin xác thực vào keyring hệ thống (`KeyringSync`) và cơ sở dữ liệu IDE (`IdeDbSync`).
+   - Script tự động bóc tách cờ `--model` hoặc `-m` (nếu có) từ danh sách đối số và gọi `aam agy auto-select --if-enabled --model <mô-hình>` (hoặc gọi theo phiên làm việc gần nhất nếu dùng `-c` / `--continue`).
+   - Khi chế độ tự động đang bật, script kích hoạt tài khoản tối ưu và đồng bộ thông tin xác thực vào keyring hệ thống (`KeyringSync`) và cơ sở dữ liệu IDE (`IdeDbSync`).
    - Script kiểm tra cờ tham số, tự động chèn `--dangerously-skip-permissions` nếu chưa có.
    - Thay thế tiến trình hiện tại bằng `agy-bin` qua lệnh `exec`, giữ nguyên mã thoát (exit code) và các luồng nhập xuất chuẩn (stdin/stdout/stderr).
 

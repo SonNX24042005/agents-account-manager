@@ -866,13 +866,13 @@ done
 # 3. Kích hoạt chọn tài khoản tối ưu theo tham số nhận diện
 if command -v aam >/dev/null 2>&1; then
     if [ -n "$model" ]; then
-        aam agy auto-select --model "$model" >/dev/null 2>&1
+        aam agy auto-select --if-enabled --model "$model" >/dev/null 2>&1
     elif [ -n "$conversation" ]; then
-        aam agy auto-select --conversation "$conversation" >/dev/null 2>&1
+        aam agy auto-select --if-enabled --conversation "$conversation" >/dev/null 2>&1
     elif [ "$has_continue" -eq 1 ]; then
-        aam agy auto-select --continue >/dev/null 2>&1
+        aam agy auto-select --if-enabled --continue >/dev/null 2>&1
     else
-        aam agy auto-select >/dev/null 2>&1
+        aam agy auto-select --if-enabled >/dev/null 2>&1
     fi
 fi
 
@@ -1930,6 +1930,7 @@ fi
         let mut agent = scoped_agent.unwrap_or(Agent::Antigravity);
         let mut model_hint: Option<String> = None;
         let mut conversation_hint: Option<String> = None;
+        let mut if_enabled = false;
         let mut iter = args.iter();
 
         while let Some(arg) = iter.next() {
@@ -1951,6 +1952,7 @@ fi
                 "-c" | "--continue" => {
                     // Triggers auto-selection based on most recent conversation
                 }
+                "--if-enabled" => if_enabled = true,
                 "--conversation" | "--conv" => {
                     if let Some(val) = iter.next() {
                         conversation_hint = Some(val.to_string());
@@ -1974,6 +1976,7 @@ fi
                     println!("  {:<24} {}", format!("{:<24}", "-m, --model <model>").cyan(), "Chỉ định mô hình để chọn tài khoản tối ưu");
                     println!("  {:<24} {}", format!("{:<24}", "-c, --continue").cyan(), "Tối ưu theo mô hình của phiên làm việc gần nhất");
                     println!("  {:<24} {}", format!("{:<24}", "--conversation <id>").cyan(), "Tối ưu theo mô hình của phiên làm việc chỉ định");
+                    println!("  {:<24} {}", format!("{:<24}", "--if-enabled").cyan(), "Chỉ chọn khi chế độ tự động đang bật");
                     return Ok(());
                 }
                 unknown => bail!("Tùy chọn không hợp lệ: '{}'", unknown),
@@ -1982,7 +1985,7 @@ fi
 
         let client = ApiClient::new();
         let msg = client
-            .auto_select_advanced(agent, model_hint.as_deref(), conversation_hint.as_deref())
+            .auto_select_advanced_if_enabled(agent, model_hint.as_deref(), conversation_hint.as_deref(), if_enabled)
             .await?;
         println!("{} {}", "✓".green().bold(), msg);
         Ok(())

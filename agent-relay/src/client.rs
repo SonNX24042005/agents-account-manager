@@ -454,6 +454,16 @@ impl ApiClient {
         model: Option<&str>,
         conversation: Option<&str>,
     ) -> Result<String> {
+        self.auto_select_advanced_if_enabled(agent, model, conversation, false).await
+    }
+
+    pub async fn auto_select_advanced_if_enabled(
+        &self,
+        agent: Agent,
+        model: Option<&str>,
+        conversation: Option<&str>,
+        if_enabled: bool,
+    ) -> Result<String> {
         self.ensure_service_ready().await?;
         match agent {
             Agent::Antigravity => {
@@ -469,7 +479,10 @@ impl ApiClient {
                 if let Some(c) = conversation {
                     payload["conversation"] = json!(c);
                 }
-                if model.is_some() || conversation.is_some() {
+                if if_enabled {
+                    payload["if_enabled"] = json!(true);
+                }
+                if model.is_some() || conversation.is_some() || if_enabled {
                     req = req.json(&payload);
                 }
 
@@ -873,4 +886,3 @@ mod tests {
         assert_eq!(dto.primary_reset_countdown(), Some("~3h 20m".to_string()));
     }
 }
-

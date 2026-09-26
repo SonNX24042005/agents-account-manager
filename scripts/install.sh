@@ -136,13 +136,13 @@ done
 # 3. Kích hoạt chọn tài khoản tối ưu theo tham số nhận diện
 if command -v aam >/dev/null 2>&1; then
     if [ -n "$model" ]; then
-        aam agy auto-select --model "$model" >/dev/null 2>&1
+        aam agy auto-select --if-enabled --model "$model" >/dev/null 2>&1
     elif [ -n "$conversation" ]; then
-        aam agy auto-select --conversation "$conversation" >/dev/null 2>&1
+        aam agy auto-select --if-enabled --conversation "$conversation" >/dev/null 2>&1
     elif [ "$has_continue" -eq 1 ]; then
-        aam agy auto-select --continue >/dev/null 2>&1
+        aam agy auto-select --if-enabled --continue >/dev/null 2>&1
     else
-        aam agy auto-select >/dev/null 2>&1
+        aam agy auto-select --if-enabled >/dev/null 2>&1
     fi
 fi
 

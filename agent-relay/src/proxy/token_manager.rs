@@ -38,11 +38,21 @@ impl TokenManager {
     }
 
     pub async fn auto_select_if_enabled(&self) -> Result<()> {
-        let flags = self.settings.flags.lock().await;
-        if flags.enabled(Agent::Antigravity) {
-            self.select_best_account_for_active_model().await?;
-        }
+        let category = self.model_detector.get_effective_category();
+        self.select_best_account_for_category_if_enabled(category).await?;
         Ok(())
+    }
+
+    pub async fn select_best_account_for_category_if_enabled(
+        &self,
+        category: TargetModelCategory,
+    ) -> Result<Option<(Account, TargetModelCategory)>> {
+        // Keep the setting locked through the switch so disabling waits for an in-flight selection.
+        let flags = self.settings.flags.lock().await;
+        if !flags.enabled(Agent::Antigravity) {
+            return Ok(None);
+        }
+        self.select_best_account_for_category(category).await.map(Some)
     }
 
     pub fn get_model_detector(&self) -> Arc<ModelDetector> {
@@ -528,6 +538,8 @@ mod tests {
         tm.settings.set(Agent::Antigravity, false).await.unwrap();
         tm.switch_account(&low.id).await.unwrap();
         tm.auto_select_if_enabled().await.unwrap();
+        assert!(tm.select_best_account_for_category_if_enabled(TargetModelCategory::Gemini).await.unwrap().is_none());
+        assert!(tm.list_accounts().await.iter().find(|a| a.id == low.id).unwrap().is_active);
         assert_eq!(tm.select_best_account().await.unwrap().id, low.id);
         assert!(tm.switch_account("missing").await.is_err());
         assert_eq!(tm.select_best_account().await.unwrap().id, low.id);

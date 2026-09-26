@@ -21,7 +21,7 @@ An intelligent multi-account manager and quota coordinator for AI coding agents,
 - **One-click account switching**: Switch active accounts instantly from the web dashboard, TUI, or CLI without manual credential copying.
 - **Smart quota auto-selection**: Automatically detect the active model and switch to the account with the highest remaining quota when limits are approached.
 - **Proactive 5-hour quota warmup**: Automatically triggers the 5-hour cooldown window when an account reaches 100% quota via a lightweight ping, ensuring continuous replenishment.
-- **Transparent CLI account wrapper**: Automatically wraps the Antigravity binary (`agy-bin`) with a transparent launcher (`agy`) that auto-selects the optimal account before execution and injects required flags.
+- **Transparent CLI account wrapper**: Wraps the Antigravity binary (`agy-bin`) with a launcher (`agy`) that selects the optimal account before execution only when automatic selection is enabled, then injects required flags.
 - **Persistent countdown visibility**: Always displays the remaining 5-hour reset time across CLI and TUI, even when quota currently reads 100%.
 - **Real-time quota monitoring**: Keep track of remaining requests, rate limits, and reset schedules across accounts.
 - **Zero environment pollution**: Runs cleanly in the background without modifying shell profiles (`.bashrc`, `.zshrc`) or creating invasive aliases.

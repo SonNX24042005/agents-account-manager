@@ -21,7 +21,7 @@ Công cụ quản lý đa tài khoản và điều phối hạn ngạch thông m
 - **Chuyển đổi tài khoản tức thì**: Đổi tài khoản hoạt động nhanh chóng qua giao diện web, TUI hoặc CLI mà không cần sao chép thủ công thông tin đăng nhập.
 - **Tự động chọn tài khoản thông minh**: Tự động nhận diện mô hình đang dùng và chuyển sang tài khoản có hạn ngạch cao nhất khi mức sử dụng sắp hết.
 - **Kích hoạt sớm chu kỳ 5 giờ (warmup service)**: Tự động gửi yêu cầu kiểm tra siêu nhẹ để kích hoạt bộ đếm thời gian hồi phục 5 giờ ngay khi tài khoản đạt 100% hạn ngạch, tối đa hóa lượng quota sẵn sàng trong ngày.
-- **Script bọc nhị phân tự động chọn tài khoản (`agy`)**: Tự động bọc nhị phân gốc Antigravity CLI (`agy-bin`) bằng script khởi chạy trong suốt, tự động chọn tài khoản có hạn ngạch cao nhất và chuyển tiếp cờ `--dangerously-skip-permissions`.
+- **Script bọc nhị phân tự động chọn tài khoản (`agy`)**: Bọc nhị phân gốc Antigravity CLI (`agy-bin`) bằng script chỉ chọn tài khoản có hạn ngạch cao nhất khi chế độ tự động đang bật, rồi chuyển tiếp cờ `--dangerously-skip-permissions`.
 - **Hiển thị thời gian đếm ngược liên tục**: Luôn hiển thị đồng hồ đếm ngược reset 5 giờ trên danh sách CLI (`aam list`, `aam check`) và giao diện TUI (`aam tui`), kể cả khi hạn ngạch đang ở mức 100%.
 - **Theo dõi hạn ngạch trực quan**: Cập nhật liên tục số lượng yêu cầu còn lại, giới hạn sử dụng và thời gian đặt lại hạn ngạch của từng tài khoản.
 - **Không can thiệp môi trường hệ thống**: Hoạt động nền độc lập, không sửa đổi các tệp cấu hình shell (`.bashrc`, `.zshrc`) và không tạo alias phức tạp.
