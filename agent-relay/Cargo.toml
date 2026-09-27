@@ -1,6 +1,6 @@
 [package]
 name = "agent-relay"
-version = "1.0.3"
+version = "1.0.4"
 edition = "2021"
 description = "High-performance local AI relay server & account manager for AI coding agents"
 authors = ["Samer <samer@local>"]

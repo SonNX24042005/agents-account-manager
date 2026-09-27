@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     tracing::info!("=====================================================");
-    tracing::info!("   Agent Relay Daemon Engine v1.0.3");
+    tracing::info!("   Agent Relay Daemon Engine v1.0.4");
     tracing::info!("=====================================================");
 
     // 2. Load configuration & create data directories

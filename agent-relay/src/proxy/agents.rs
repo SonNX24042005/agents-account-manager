@@ -1074,7 +1074,7 @@ async fn fetch_codex_quota(
         let mut input = child.stdin.take().context("Không mở được stdin Codex")?;
         let output = child.stdout.take().context("Không mở được stdout Codex")?;
         let mut reader = BufReader::new(output.take((MAX_JSON * 4) as u64));
-        input.write_all(format!("{}\n", json!({"id":0,"method":"initialize","params":{"clientInfo":{"name":"agent_account_manager","version":"1.0.3"}}})).as_bytes()).await?;
+        input.write_all(format!("{}\n", json!({"id":0,"method":"initialize","params":{"clientInfo":{"name":"agent_account_manager","version":"1.0.4"}}})).as_bytes()).await?;
         read_rpc(&mut reader, 0).await?;
         input.write_all(b"{\"method\":\"initialized\"}\n").await?;
         read_codex_quota(&mut input, &mut reader, credentials).await

@@ -64,7 +64,7 @@ impl Cli {
             }
             "update" | "upgrade" => Some(Self::update_binary()),
             "version" | "-v" | "--version" => {
-                println!("{} (Agent Account Manager)", "aam v1.0.3".cyan().bold());
+                println!("{} (Agent Account Manager)", "aam v1.0.4".cyan().bold());
                 Some(Ok(()))
             }
             "help" | "--help" | "-h" => {

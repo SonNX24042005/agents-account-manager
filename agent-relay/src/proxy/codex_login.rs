@@ -339,7 +339,7 @@ async fn start_session(data_dir: &Path, program: &Path) -> Result<Session> {
             .write_all(
                 format!(
                     "{}\n",
-                    json!({"id":0,"method":"initialize","params":{"clientInfo":{"name":"agent_account_manager","version":"1.0.3"}}})
+                    json!({"id":0,"method":"initialize","params":{"clientInfo":{"name":"agent_account_manager","version":"1.0.4"}}})
                 )
                 .as_bytes(),
             )
