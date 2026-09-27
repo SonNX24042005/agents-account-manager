@@ -158,12 +158,151 @@ EOF
     fi
 }
 
+detect_package_manager() {
+    if command -v apt-get >/dev/null 2>&1; then
+        echo "apt"
+    elif command -v dnf >/dev/null 2>&1; then
+        echo "dnf"
+    elif command -v yum >/dev/null 2>&1; then
+        echo "yum"
+    elif command -v pacman >/dev/null 2>&1; then
+        echo "pacman"
+    elif command -v zypper >/dev/null 2>&1; then
+        echo "zypper"
+    elif command -v apk >/dev/null 2>&1; then
+        echo "apk"
+    elif [ "$OS" = "darwin" ] && command -v brew >/dev/null 2>&1; then
+        echo "brew"
+    else
+        echo "unknown"
+    fi
+}
+
+install_system_packages() {
+    local pm="$1"
+    shift
+    local pkgs=("$@")
+    [ ${#pkgs[@]} -eq 0 ] && return 0
+
+    echo "[phụ thuộc] Đang tự động cài đặt các gói phụ thuộc hệ thống: ${pkgs[*]}..."
+    local sudo_cmd=""
+    if [ "$(id -u)" -ne 0 ]; then
+        if command -v sudo >/dev/null 2>&1; then
+            sudo_cmd="sudo"
+        else
+            echo "[cảnh báo] Cần quyền quản trị viên (root/sudo) để cài đặt các gói: ${pkgs[*]}"
+            echo "          Vui lòng cài đặt thủ công các gói trên qua trình quản lý gói của hệ thống."
+            return 1
+        fi
+    fi
+
+    case "$pm" in
+        apt)
+            $sudo_cmd apt-get update -y -qq >/dev/null 2>&1 || true
+            $sudo_cmd DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${pkgs[@]}" >/dev/null 2>&1 || {
+                echo "[cảnh báo] Không thể cài đặt tự động qua apt-get (có thể cần nhập mật khẩu sudo)."
+                return 1
+            }
+            ;;
+        dnf)
+            $sudo_cmd dnf install -y -q "${pkgs[@]}" >/dev/null 2>&1 || return 1
+            ;;
+        yum)
+            $sudo_cmd yum install -y -q "${pkgs[@]}" >/dev/null 2>&1 || return 1
+            ;;
+        pacman)
+            $sudo_cmd pacman -Sy --noconfirm "${pkgs[@]}" >/dev/null 2>&1 || return 1
+            ;;
+        zypper)
+            $sudo_cmd zypper --non-interactive install -y "${pkgs[@]}" >/dev/null 2>&1 || return 1
+            ;;
+        apk)
+            $sudo_cmd apk add --no-cache "${pkgs[@]}" >/dev/null 2>&1 || return 1
+            ;;
+        brew)
+            brew install "${pkgs[@]}" >/dev/null 2>&1 || return 1
+            ;;
+        *)
+            echo "[cảnh báo] Không nhận diện được trình quản lý gói để tự động cài đặt: ${pkgs[*]}"
+            return 1
+            ;;
+    esac
+}
+
+ensure_runtime_dependencies() {
+    local pm
+    pm="$(detect_package_manager)"
+    local missing_pkgs=()
+
+    # 1. Các công cụ cơ bản phục vụ tải về và giải nén
+    if ! command -v curl >/dev/null 2>&1; then
+        case "$pm" in
+            apt|dnf|yum|pacman|zypper|apk|brew) missing_pkgs+=("curl") ;;
+        esac
+    fi
+
+    if ! command -v tar >/dev/null 2>&1; then
+        case "$pm" in
+            apt|dnf|yum|pacman|zypper|apk) missing_pkgs+=("tar") ;;
+        esac
+    fi
+
+    if ! command -v gzip >/dev/null 2>&1; then
+        case "$pm" in
+            apt|dnf|yum|pacman|zypper|apk) missing_pkgs+=("gzip") ;;
+        esac
+    fi
+
+    # 2. Dịch vụ lưu trữ token an toàn (OS keyring / Secret Service) trên Linux
+    if [ "$OS" = "linux" ]; then
+        local has_keyring=false
+        if command -v secret-tool >/dev/null 2>&1 || pgrep -f "gnome-keyring-daemon" >/dev/null 2>&1 || [ -f /usr/bin/gnome-keyring-daemon ]; then
+            has_keyring=true
+        fi
+
+        if [ "$has_keyring" = false ]; then
+            case "$pm" in
+                apt)
+                    missing_pkgs+=("gnome-keyring" "libsecret-1-0")
+                    ;;
+                dnf|yum)
+                    missing_pkgs+=("gnome-keyring" "libsecret")
+                    ;;
+                pacman)
+                    missing_pkgs+=("gnome-keyring" "libsecret")
+                    ;;
+                zypper)
+                    missing_pkgs+=("gnome-keyring" "libsecret-1-0")
+                    ;;
+                apk)
+                    missing_pkgs+=("gnome-keyring" "libsecret")
+                    ;;
+            esac
+        fi
+
+        # D-Bus session bus trên các bản phân phối Linux tối giản hoặc headless
+        if ! command -v dbus-daemon >/dev/null 2>&1 && ! command -v dbus-launch >/dev/null 2>&1; then
+            case "$pm" in
+                apt) missing_pkgs+=("dbus-user-session") ;;
+                dnf|yum|pacman|zypper|apk) missing_pkgs+=("dbus") ;;
+            esac
+        fi
+    fi
+
+    if [ ${#missing_pkgs[@]} -gt 0 ]; then
+        install_system_packages "$pm" "${missing_pkgs[@]}" || true
+    fi
+}
+
 do_install() {
     echo "====================================================="
     echo "   Cài đặt Agent Relay Manager (aam)"
     echo "====================================================="
 
-    # 1. Check if running locally inside repo
+    # 1. Tự động kiểm tra và cài đặt các phụ thuộc hệ thống cần thiết
+    ensure_runtime_dependencies
+
+    # 2. Kiểm tra nếu đang chạy trong thư mục kho mã nguồn cục bộ
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-}" 2>/dev/null)" 2>/dev/null && pwd || true)"
     LOCAL_REPO_DIR=""
     if [ -n "$SCRIPT_DIR" ] && [ -d "$SCRIPT_DIR/../agent-relay" ]; then
@@ -180,22 +319,46 @@ do_install() {
         LOCAL_REPO_DIR="$(pwd)"
     fi
 
-    if [ -n "$LOCAL_REPO_DIR" ]; then
-        SRC_DIR="agent-relay"
-        [ ! -d "$LOCAL_REPO_DIR/$SRC_DIR" ] && SRC_DIR="antigravity-relay"
-        echo "[build] Phát hiện mã nguồn cục bộ tại $LOCAL_REPO_DIR, đang biên dịch..."
-        (cd "$LOCAL_REPO_DIR/$SRC_DIR" && cargo build --release -j 2)
-        BIN_NAME="agent-relay"
-        [ ! -f "$LOCAL_REPO_DIR/$SRC_DIR/target/release/$BIN_NAME" ] && BIN_NAME="antigravity-relay"
-        cp -f "$LOCAL_REPO_DIR/$SRC_DIR/target/release/$BIN_NAME" "$INSTALL_DIR/agent-relay"
-    else
-        # 2. Download release artifact from GitHub Releases
-        RELEASE_URL="https://github.com/${REPO}/releases/latest/download/agent-relay-${OS}-${TARGET_ARCH}.tar.gz"
-        FALLBACK_URL="https://github.com/${REPO}/releases/latest/download/antigravity-relay-${OS}-${TARGET_ARCH}.tar.gz"
+    DOWNLOAD_SUCCESS=false
+
+    # 3. Ưu tiên sử dụng tệp nhị phân có sẵn (hoàn toàn không cần cài Rust)
+    local found_local_bin=""
+    if [ -n "${AAM_BINARY_PATH:-}" ] && [ -f "$AAM_BINARY_PATH" ] && [ -x "$AAM_BINARY_PATH" ]; then
+        found_local_bin="$AAM_BINARY_PATH"
+    elif [ -n "$LOCAL_REPO_DIR" ]; then
+        for candidate in \
+            "$LOCAL_REPO_DIR/agent-relay/target/release/agent-relay" \
+            "$LOCAL_REPO_DIR/agent-relay/target/release/antigravity-relay" \
+            "$LOCAL_REPO_DIR/antigravity-relay/target/release/antigravity-relay" \
+            "$LOCAL_REPO_DIR/agent-relay/target/debug/agent-relay"; do
+            if [ -f "$candidate" ] && [ -x "$candidate" ]; then
+                found_local_bin="$candidate"
+                break
+            fi
+        done
+    fi
+
+    if [ -n "$found_local_bin" ]; then
+        echo "[cài đặt] Phát hiện tệp nhị phân có sẵn tại $found_local_bin, tiến hành cài đặt..."
+        cp -f "$found_local_bin" "$INSTALL_DIR/agent-relay"
+        DOWNLOAD_SUCCESS=true
+    fi
+
+    # 4. Tải bản phát hành biên dịch sẵn từ GitHub Releases nếu chưa có tệp nhị phân
+    if [ "$DOWNLOAD_SUCCESS" != "true" ]; then
+        local version_tag="${AAM_VERSION:-${VERSION:-}}"
+        local release_base_url="https://github.com/${REPO}/releases/latest/download"
+        if [ -n "$version_tag" ]; then
+            [[ "$version_tag" != v* ]] && version_tag="v$version_tag"
+            release_base_url="https://github.com/${REPO}/releases/download/${version_tag}"
+        fi
+
+        RELEASE_URL="${AAM_DOWNLOAD_URL:-${release_base_url}/agent-relay-${OS}-${TARGET_ARCH}.tar.gz}"
+        FALLBACK_URL="${release_base_url}/antigravity-relay-${OS}-${TARGET_ARCH}.tar.gz"
         CHECKSUM_URL="${RELEASE_URL}.sha256"
         FALLBACK_CHECKSUM_URL="${FALLBACK_CHECKSUM_URL:-${FALLBACK_URL}.sha256}"
-        
-        echo "[download] Đang tải bản phát hành từ GitHub..."
+
+        echo "[tải về] Đang tải bản phát hành biên dịch sẵn (${OS}-${TARGET_ARCH})..."
         TMP_DIR="$(mktemp -d)"
         ARCHIVE="$TMP_DIR/agent-relay.tar.gz"
         CHECKSUM_FILE="$TMP_DIR/agent-relay.tar.gz.sha256"
@@ -204,15 +367,19 @@ do_install() {
         }
         trap cleanup EXIT
 
-        DOWNLOAD_SUCCESS=false
-        if ! curl --proto '=https' --tlsv1.2 -fsSL --retry 3 --max-time 120 "$RELEASE_URL" -o "$ARCHIVE" 2>/dev/null; then
-            curl --proto '=https' --tlsv1.2 -fsSL --retry 3 --max-time 120 "$FALLBACK_URL" -o "$ARCHIVE" 2>/dev/null || true
+        local curl_auth=()
+        if [ -n "${GITHUB_TOKEN:-}" ]; then
+            curl_auth=(-H "Authorization: Bearer $GITHUB_TOKEN")
+        fi
+
+        if ! curl --proto '=https' --tlsv1.2 -fsSL --retry 3 --max-time 120 "${curl_auth[@]}" "$RELEASE_URL" -o "$ARCHIVE" 2>/dev/null; then
+            curl --proto '=https' --tlsv1.2 -fsSL --retry 3 --max-time 120 "${curl_auth[@]}" "$FALLBACK_URL" -o "$ARCHIVE" 2>/dev/null || true
             CHECKSUM_URL="$FALLBACK_CHECKSUM_URL"
         fi
 
         if [ -f "$ARCHIVE" ] && [ -s "$ARCHIVE" ]; then
-            # If a SHA256 checksum asset is published, verify integrity
-            if curl --proto '=https' --tlsv1.2 -fsSL --retry 2 --max-time 30 "$CHECKSUM_URL" -o "$CHECKSUM_FILE" 2>/dev/null; then
+            # Kiểm tra mã băm SHA-256 nếu có
+            if curl --proto '=https' --tlsv1.2 -fsSL --retry 2 --max-time 30 "${curl_auth[@]}" "$CHECKSUM_URL" -o "$CHECKSUM_FILE" 2>/dev/null; then
                 EXPECTED_SHA256="$(awk 'NR == 1 { print $1 }' "$CHECKSUM_FILE")"
                 if [[ "$EXPECTED_SHA256" =~ ^[[:xdigit:]]{64}$ ]]; then
                     if command -v sha256sum >/dev/null 2>&1; then
@@ -224,10 +391,10 @@ do_install() {
                     fi
 
                     if [ -n "$ACTUAL_SHA256" ] && [ "${ACTUAL_SHA256,,}" != "${EXPECTED_SHA256,,}" ]; then
-                        echo "[error] Mã kiểm tra SHA-256 không khớp. Đã hủy cài đặt."
+                        echo "[lỗi] Mã kiểm tra SHA-256 không khớp. Đã hủy cài đặt."
                         exit 1
                     fi
-                    echo "[verify] Đã xác minh mã băm SHA-256 thành công."
+                    echo "[xác thực] Đã xác minh mã băm SHA-256 thành công."
                 fi
             fi
 
@@ -241,27 +408,38 @@ do_install() {
                     cp -f "$EXTRACTED" "$INSTALL_DIR/agent-relay"
                     DOWNLOAD_SUCCESS=true
                 fi
+            else
+                tar -xzf "$ARCHIVE" -C "$TMP_DIR" 2>/dev/null || true
+                for candidate in "$TMP_DIR/agent-relay" "$TMP_DIR/antigravity-relay" "$TMP_DIR/bin/agent-relay"; do
+                    if [ -f "$candidate" ] && [ ! -L "$candidate" ]; then
+                        cp -f "$candidate" "$INSTALL_DIR/agent-relay"
+                        DOWNLOAD_SUCCESS=true
+                        break
+                    fi
+                done
             fi
         fi
 
-        # 3. Fallback: Build from git repository if prebuilt binary download or extraction failed
+        # 5. Trường hợp dự phòng: chỉ biên dịch nếu người dùng là nhà phát triển đã có sẵn cargo
         if [ "$DOWNLOAD_SUCCESS" != "true" ]; then
-            if command -v cargo >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
-                echo "[build] Không thể tải pre-built binary, đang biên dịch từ GitHub repository..."
-                TMP_SRC="$(mktemp -d)"
-                git clone --depth 1 "https://github.com/${REPO}.git" "$TMP_SRC/repo"
-                SRC_DIR="$TMP_SRC/repo/agent-relay"
-                [ ! -d "$SRC_DIR" ] && SRC_DIR="$TMP_SRC/repo/antigravity-relay"
-                (cd "$SRC_DIR" && cargo build --release -j 2)
-                if [ -f "$SRC_DIR/target/release/agent-relay" ]; then
-                    cp -f "$SRC_DIR/target/release/agent-relay" "$INSTALL_DIR/agent-relay"
-                else
-                    cp -f "$SRC_DIR/target/release/antigravity-relay" "$INSTALL_DIR/agent-relay"
-                fi
-                rm -rf "$TMP_SRC"
+            if [ -n "$LOCAL_REPO_DIR" ] && command -v cargo >/dev/null 2>&1; then
+                echo "[biên dịch] Không tải được bản phát hành từ xa; phát hiện cargo có sẵn, tiến hành biên dịch..."
+                SRC_DIR="agent-relay"
+                [ ! -d "$LOCAL_REPO_DIR/$SRC_DIR" ] && SRC_DIR="antigravity-relay"
+                (cd "$LOCAL_REPO_DIR/$SRC_DIR" && cargo build --release -j 2)
+                BIN_NAME="agent-relay"
+                [ ! -f "$LOCAL_REPO_DIR/$SRC_DIR/target/release/$BIN_NAME" ] && BIN_NAME="antigravity-relay"
+                cp -f "$LOCAL_REPO_DIR/$SRC_DIR/target/release/$BIN_NAME" "$INSTALL_DIR/agent-relay"
+                DOWNLOAD_SUCCESS=true
             else
-                echo "[error] Không thể tải bản phát hành và máy chưa cài đặt 'cargo' / 'git'."
-                echo "        Vui lòng cài đặt Rust (https://rustup.rs) hoặc clone repo để build."
+                echo "[lỗi] Không thể tải bản phát hành biên dịch sẵn cho nền tảng ${OS}-${TARGET_ARCH}."
+                echo "      Người dùng thông thường không cần cài đặt Rust để sử dụng."
+                echo "      Bạn có thể cài đặt theo một trong các cách sau:"
+                echo "      1. Nếu kho lưu trữ là riêng tư, truyền mã truy cập qua biến GITHUB_TOKEN:"
+                echo "         GITHUB_TOKEN=ghp_xxx ./scripts/install.sh"
+                echo "      2. Hoặc chỉ định tệp nhị phân đã có sẵn qua biến AAM_BINARY_PATH:"
+                echo "         AAM_BINARY_PATH=/đường/dẫn/agent-relay ./scripts/install.sh"
+                echo "      3. Hoặc sao chép trực tiếp tệp nhị phân agent-relay vào $INSTALL_DIR/agent-relay"
                 exit 1
             fi
         fi

@@ -100,71 +100,112 @@ function Invoke-Install {
         New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     }
 
-    $arch = if ([System.Environment]::Is64BitOperatingSystem) { "x86_64" } else { "x86" }
-    $assetName = "agent-relay-windows-$arch.zip"
-    $releaseUrl = if ($Version -ne "") {
-        "https://github.com/$Repo/releases/download/v$Version/$assetName"
+    # 1. Ưu tiên kiểm tra tệp nhị phân có sẵn trên máy (không cần Rust)
+    $foundLocalExe = $null
+    if ($env:AAM_BINARY_PATH -and (Test-Path $env:AAM_BINARY_PATH)) {
+        $foundLocalExe = $env:AAM_BINARY_PATH
     } else {
-        "https://github.com/$Repo/releases/latest/download/$assetName"
-    }
-    $checksumUrl = "$releaseUrl.sha256"
-
-    $tempDir = Join-Path $env:TEMP ("aam-install-" + [Guid]::NewGuid().ToString())
-    New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
-
-    try {
-        $zipPath = Join-Path $tempDir $assetName
-        $checksumPath = Join-Path $tempDir "$assetName.sha256"
-
-        Write-Info "Đang tải bản phát hành từ GitHub..."
-        try {
-            Invoke-WebRequest -Uri $releaseUrl -OutFile $zipPath -UseBasicParsing -TimeoutSec 120
-        } catch {
-            Write-Err "Không thể tải tệp phát hành từ ${releaseUrl}: $_"
-            exit 1
-        }
-
-        # Checksum verification
-        try {
-            Invoke-WebRequest -Uri $checksumUrl -OutFile $checksumPath -UseBasicParsing -TimeoutSec 30 -ErrorAction SilentlyContinue
-            if (Test-Path $checksumPath) {
-                $expectedHash = (Get-Content $checksumPath -Raw).Trim().Split()[0].ToLower()
-                if ($expectedHash.Length -eq 64) {
-                    $actualHash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLower()
-                    if ($actualHash -ne $expectedHash) {
-                        Write-Err "Mã băm SHA-256 không khớp. Đã hủy cài đặt."
-                        exit 1
-                    }
-                    Write-Success "Đã xác minh mã băm SHA-256 thành công."
-                }
+        $scriptParent = Split-Path -Parent $PSScriptRoot
+        $localCandidates = @(
+            (Join-Path $scriptParent "agent-relay\target\release\agent-relay.exe"),
+            (Join-Path $scriptParent "agent-relay\target\release\antigravity-relay.exe"),
+            (Join-Path $scriptParent "antigravity-relay\target\release\antigravity-relay.exe"),
+            (Join-Path $scriptParent "agent-relay\target\debug\agent-relay.exe")
+        )
+        foreach ($candidate in $localCandidates) {
+            if (Test-Path $candidate) {
+                $foundLocalExe = (Resolve-Path $candidate).Path
+                break
             }
-        } catch {
-            Write-Warn "Không thể kiểm tra checksum, tiếp tục giải nén..."
         }
+    }
 
-        Write-Info "Đang giải nén gói cài đặt..."
-        Expand-Archive -Path $zipPath -DestinationPath $tempDir -Force
-
-        $extractedExe = Join-Path $tempDir "agent-relay.exe"
-        if (-not (Test-Path $extractedExe)) {
-            $extractedExe = Join-Path $tempDir "antigravity-relay.exe"
-        }
-
-        if (-not (Test-Path $extractedExe)) {
-            Write-Err "Không tìm thấy tệp thực thi bên trong gói zip."
-            exit 1
-        }
-
+    if ($foundLocalExe) {
+        Write-Info "Phát hiện tệp nhị phân có sẵn tại $foundLocalExe, tiến hành cài đặt..."
         Stop-RelayService
-
         $targetExe = Join-Path $InstallDir "agent-relay.exe"
         $targetAam = Join-Path $InstallDir "aam.exe"
-
-        Copy-Item -Path $extractedExe -Destination $targetExe -Force
-        Copy-Item -Path $extractedExe -Destination $targetAam -Force
+        Copy-Item -Path $foundLocalExe -Destination $targetExe -Force
+        Copy-Item -Path $foundLocalExe -Destination $targetAam -Force
         Write-Success "Đã cài đặt tệp thực thi vào $InstallDir"
-
         Ensure-PathEnvironment
+    } else {
+        # 2. Tải bản phát hành biên dịch sẵn từ GitHub Releases (không cần Rust)
+        $arch = if ([System.Environment]::Is64BitOperatingSystem) { "x86_64" } else { "x86" }
+        $assetName = "agent-relay-windows-$arch.zip"
+        $releaseUrl = if ($Version -ne "") {
+            "https://github.com/$Repo/releases/download/v$Version/$assetName"
+        } else {
+            "https://github.com/$Repo/releases/latest/download/$assetName"
+        }
+        $checksumUrl = "$releaseUrl.sha256"
+
+        $tempDir = Join-Path $env:TEMP ("aam-install-" + [Guid]::NewGuid().ToString())
+        New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+
+        try {
+            $zipPath = Join-Path $tempDir $assetName
+            $checksumPath = Join-Path $tempDir "$assetName.sha256"
+
+            Write-Info "Đang tải bản phát hành từ GitHub..."
+            $headers = @{}
+            if ($env:GITHUB_TOKEN) {
+                $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN"
+            }
+
+            try {
+                Invoke-WebRequest -Uri $releaseUrl -OutFile $zipPath -Headers $headers -UseBasicParsing -TimeoutSec 120
+            } catch {
+                Write-Err "Không thể tải tệp phát hành từ ${releaseUrl}: $_"
+                Write-Host "Người dùng không cần cài đặt Rust để sử dụng. Bạn có thể truyền biến `$env:GITHUB_TOKEN hoặc chỉ định `$env:AAM_BINARY_PATH."
+                exit 1
+            }
+
+            # Checksum verification
+            try {
+                Invoke-WebRequest -Uri $checksumUrl -OutFile $checksumPath -Headers $headers -UseBasicParsing -TimeoutSec 30 -ErrorAction SilentlyContinue
+                if (Test-Path $checksumPath) {
+                    $expectedHash = (Get-Content $checksumPath -Raw).Trim().Split()[0].ToLower()
+                    if ($expectedHash.Length -eq 64) {
+                        $actualHash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLower()
+                        if ($actualHash -ne $expectedHash) {
+                            Write-Err "Mã băm SHA-256 không khớp. Đã hủy cài đặt."
+                            exit 1
+                        }
+                        Write-Success "Đã xác minh mã băm SHA-256 thành công."
+                    }
+                }
+            } catch {
+                Write-Warn "Không thể kiểm tra checksum, tiếp tục giải nén..."
+            }
+
+            Write-Info "Đang giải nén gói cài đặt..."
+            Expand-Archive -Path $zipPath -DestinationPath $tempDir -Force
+
+            $extractedExe = Join-Path $tempDir "agent-relay.exe"
+            if (-not (Test-Path $extractedExe)) {
+                $extractedExe = Join-Path $tempDir "antigravity-relay.exe"
+            }
+
+            if (-not (Test-Path $extractedExe)) {
+                Write-Err "Không tìm thấy tệp thực thi bên trong gói zip."
+                exit 1
+            }
+
+            Stop-RelayService
+
+            $targetExe = Join-Path $InstallDir "agent-relay.exe"
+            $targetAam = Join-Path $InstallDir "aam.exe"
+
+            Copy-Item -Path $extractedExe -Destination $targetExe -Force
+            Copy-Item -Path $extractedExe -Destination $targetAam -Force
+            Write-Success "Đã cài đặt tệp thực thi vào $InstallDir"
+
+            Ensure-PathEnvironment
+        } finally {
+            Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 
         Write-Host ""
         Write-Success "Cài đặt thành công lệnh 'aam'!"
